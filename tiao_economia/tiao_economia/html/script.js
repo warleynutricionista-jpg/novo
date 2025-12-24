@@ -1,692 +1,801 @@
+/**
+ * ==========================================================
+ * Space Economy v5.0 - Modern UI Controller
+ * Author: Space Economy Team
+ * Description: Complete client-side controller with modern architecture
+ * ==========================================================
+ */
+
 (() => {
-  const RESOURCE =
-    (typeof GetParentResourceName === "function" && GetParentResourceName()) ||
-    "space_economy";
+  'use strict';
 
+  // ===========================
+  // CONFIGURATION & CONSTANTS
+  // ===========================
+  const RESOURCE_NAME = (typeof GetParentResourceName === 'function' && GetParentResourceName()) || 'space_economy';
   const DEBUG = false;
-  const log = (...a) => DEBUG && console.log("[SpaceEco UI]", ...a);
 
-  const $ = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const log = (...args) => DEBUG && console.log('[SpaceEco]', ...args);
+  const error = (...args) => console.error('[SpaceEco Error]', ...args);
 
-  const safeText = (el, text) => {
-    if (!el) return;
-    el.textContent = String(text ?? "");
+  // ===========================
+  // UTILITY FUNCTIONS
+  // ===========================
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+  const formatMoney = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? `$${Math.floor(num).toLocaleString('pt-BR')}` : '$0';
   };
 
-  const fmtMoney = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? Math.floor(n).toLocaleString("pt-BR") : "0";
-  };
-
-  const fmtFixed = (v, d = 2) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n.toFixed(d) : (0).toFixed(d);
+  const formatDecimal = (value, decimals = 2) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num.toFixed(decimals) : (0).toFixed(decimals);
   };
 
   const parsePositiveInt = (value) => {
-    const raw = String(value ?? "").replace(/[^\d]/g, "");
-    const n = Number(raw);
-    return Number.isFinite(n) && Math.floor(n) > 0 ? Math.floor(n) : null;
+    const str = String(value ?? '').replace(/[^\d]/g, '');
+    const num = Number(str);
+    return Number.isFinite(num) && Math.floor(num) > 0 ? Math.floor(num) : null;
   };
 
   const parseNumber = (value) => {
-    const n = Number(String(value ?? "").replace(",", "."));
-    return Number.isFinite(n) ? n : null;
+    const num = Number(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(num) ? num : null;
   };
 
-  const deepClone = (v) => {
+  const setElementText = (element, text) => {
+    if (element) element.textContent = String(text ?? '');
+  };
+
+  const deepClone = (obj) => {
     try {
-      return JSON.parse(JSON.stringify(v));
+      return JSON.parse(JSON.stringify(obj));
     } catch {
-      return v;
+      return obj;
     }
   };
 
   const setByPath = (obj, path, value) => {
     if (!obj || !path) return;
-    const parts = String(path).split(".").filter(Boolean);
-    let cur = obj;
+    const parts = String(path).split('.').filter(Boolean);
+    let current = obj;
     for (let i = 0; i < parts.length; i++) {
-      const k = parts[i];
+      const key = parts[i];
       if (i === parts.length - 1) {
-        cur[k] = value;
+        current[key] = value;
         return;
       }
-      if (!cur[k] || typeof cur[k] !== "object") cur[k] = {};
-      cur = cur[k];
+      if (!current[key] || typeof current[key] !== 'object') {
+        current[key] = {};
+      }
+      current = current[key];
     }
   };
 
   const getByPath = (obj, path) => {
     if (!obj || !path) return undefined;
-    const parts = String(path).split(".").filter(Boolean);
-    let cur = obj;
-    for (const k of parts) {
-      if (!cur || typeof cur !== "object") return undefined;
-      cur = cur[k];
+    const parts = String(path).split('.').filter(Boolean);
+    let current = obj;
+    for (const key of parts) {
+      if (!current || typeof current !== 'object') return undefined;
+      current = current[key];
     }
-    return cur;
+    return current;
   };
 
-  // -----------------------------
-  // Networking (NUI callbacks)
-  // -----------------------------
-  const post = (event, data = {}) => {
-    log("POST:", event, data);
-    return fetch(`https://${RESOURCE}/${event}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json; charset=UTF-8" },
+  // ===========================
+  // NUI COMMUNICATION
+  // ===========================
+  const postNUI = (event, data = {}) => {
+    log('POST:', event, data);
+    return fetch(`https://${RESOURCE_NAME}/${event}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
       body: JSON.stringify(data),
-    }).catch(() => {});
+    }).catch((err) => error('POST failed:', event, err));
   };
 
-  // -----------------------------
-  // Busy lock
-  // -----------------------------
-  const Busy = (() => {
-    let locked = false;
-    let timer = null;
-
-    const apply = (state) => {
-      $$("[data-busy-control]").forEach((btn) => {
-        btn.disabled = state;
-        btn.style.opacity = state ? "0.7" : "1";
-        btn.style.pointerEvents = state ? "none" : "auto";
-      });
-    };
-
-    return {
-      get: () => locked,
-      set: (state, timeoutMs = 0) => {
-        locked = !!state;
-        apply(locked);
-
-        if (timer) clearTimeout(timer);
-        timer = null;
-
-        if (locked && timeoutMs > 0) {
-          timer = setTimeout(() => {
-            locked = false;
-            apply(false);
-          }, timeoutMs);
-        }
-      },
-    };
-  })();
-
-  // -----------------------------
-  // UI core
-  // -----------------------------
-  const showUI = (show) => {
-    const body = document.body;
-    const overlay = $(".overlay");
-
-    if (show) {
-      body.style.display = "block";
-      requestAnimationFrame(() => overlay && overlay.classList.add("is-active"));
-      overlay && overlay.setAttribute("aria-hidden", "false");
-    } else {
-      overlay && overlay.classList.remove("is-active");
-      overlay && overlay.setAttribute("aria-hidden", "true");
-      setTimeout(() => {
-        body.style.display = "none";
-      }, 250);
-    }
+  // ===========================
+  // STATE MANAGEMENT
+  // ===========================
+  const State = {
+    uiOpen: false,
+    currentView: 'overview',
+    adminDraft: null,
+    taxCatalog: [],
+    isDirty: false,
+    busy: false,
+    payment: { amount: 0, reason: '' },
+    inputModal: { callback: null, type: 'text' },
   };
 
-  const hideAllCards = () => {
-    $$(".card").forEach((c) => (c.style.display = "none"));
-  };
+  // ===========================
+  // UI CONTROLLER
+  // ===========================
+  const UI = {
+    show(visible) {
+      const body = document.body;
+      const overlay = $('.overlay');
 
-  const focusFirstInput = (root) => {
-    setTimeout(() => {
-      const el =
-        root.querySelector("[data-autofocus]") ||
-        root.querySelector("input:not([disabled]), button.primary:not([disabled]), select");
-      if (el && typeof el.focus === "function") el.focus();
-    }, 40);
-  };
-
-  const openPanel = (cardId) => {
-    hideAllCards();
-    const el = document.getElementById(cardId);
-    if (!el) return console.error(`[SpaceEco UI] Card inexistente: ${cardId}`);
-
-    const isAdmin = cardId === "admin-dashboard-container";
-    el.style.display = isAdmin ? "grid" : "flex";
-    showUI(true);
-    focusFirstInput(el);
-    Busy.set(false);
-  };
-
-  const closeAllPanels = (notifyLua = true) => {
-    showUI(false);
-    hideAllCards();
-    Busy.set(false);
-    if (notifyLua) post("forceClose");
-  };
-
-  // -----------------------------
-  // Renderers
-  // -----------------------------
-  const renderDebtList = (debts) => {
-    const tbody = $("#debt-table tbody");
-    if (!tbody) return;
-
-    tbody.innerHTML = "";
-    if (!Array.isArray(debts) || debts.length === 0) return;
-
-    debts.forEach((d) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${String(d.playerName || "Desconhecido")}</td>
-        <td>${String(d.citizenid || "-")}</td>
-        <td>$${fmtMoney(d.amount)}</td>
-        <td>${String(d.reason || "-")}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  };
-
-  const renderAdminLogs = (logs) => {
-    const body = $("#admin-logs-table tbody");
-    if (!body) return;
-
-    body.innerHTML = "";
-    if (!Array.isArray(logs) || logs.length === 0) {
-      body.innerHTML =
-        '<tr><td colspan="3" class="muted">Sem dados carregados.</td></tr>';
-      return;
-    }
-
-    logs.forEach((l) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${String(l.timestamp || "-")}</td>
-        <td>${String(l.category || "-")}</td>
-        <td>${String(l.message || "-")}</td>
-      `;
-      body.appendChild(tr);
-    });
-  };
-
-  // -----------------------------
-  // Payment state
-  // -----------------------------
-  const Payment = { tax: 0, reason: "—" };
-
-  // -----------------------------
-  // Admin module
-  // -----------------------------
-  const Admin = (() => {
-    const state = {
-      ready: false,
-      dirty: false,
-      draft: null,
-      activeView: "overview",
-      taxCatalog: null,
-    };
-
-    const root = () => $("#admin-dashboard-container");
-
-    const DEFAULT_TAX_CATALOG = [
-      { key: "IPTU", label: "IPTU", mode: "base_percent", percent: 0.3 },
-      { key: "IPVA", label: "IPVA", mode: "base_percent", percent: 1.5 },
-      { key: "IRPF", label: "Imposto de Renda", mode: "base_percent", percent: 2.0 },
-      { key: "ADMIN_FINE", label: "Multa Administrativa", mode: "fixed", fixed: 1000 },
-      { key: "GOV_FEE", label: "Taxa Governamental", mode: "fixed", fixed: 500 },
-      { key: "OUTRO", label: "Outro", mode: "fixed", fixed: 0 },
-    ];
-
-    const setStatus = (msg, kind = "") => {
-      const el = $("#issue-status", root());
-      if (!el) return;
-      el.textContent = msg || "";
-      el.className = `inline-status ${kind}`.trim();
-      el.style.display = msg ? "block" : "none";
-    };
-
-    const setDirty = (v) => {
-      state.dirty = !!v;
-
-      const saveBtn = $('[data-action="saveAdminSettings"]', root());
-      if (saveBtn) {
-        saveBtn.disabled = !state.dirty;
-        saveBtn.style.opacity = state.dirty ? "1" : "0.5";
+      if (visible) {
+        body.style.display = 'block';
+        requestAnimationFrame(() => {
+          if (overlay) overlay.classList.add('is-active');
+        });
+      } else {
+        if (overlay) overlay.classList.remove('is-active');
+        setTimeout(() => {
+          body.style.display = 'none';
+        }, 300);
       }
 
-      const tag = $("#admin-unsaved-tag", root());
-      if (tag) tag.style.display = state.dirty ? "inline-flex" : "none";
-    };
+      State.uiOpen = visible;
+    },
 
-    const setActiveView = (viewName) => {
-      state.activeView = viewName || "overview";
-      const r = root();
-      if (!r) return;
+    hideAllCards() {
+      $$('.card').forEach((card) => (card.style.display = 'none'));
+    },
 
-      $$(".view", r).forEach((v) => v.classList.remove("is-active"));
-      const view = $(`.view[data-view="${state.activeView}"]`, r);
-      if (view) view.classList.add("is-active");
+    showCard(cardId, displayType = 'flex') {
+      this.hideAllCards();
+      const card = $(`#${cardId}`);
+      if (!card) return error('Card not found:', cardId);
 
-      $$(".nav-item", r).forEach((n) => n.classList.remove("is-active"));
-      const nav = $(`.nav-item[data-nav="${state.activeView}"]`, r);
-      if (nav) nav.classList.add("is-active");
-    };
+      card.style.display = displayType;
+      this.show(true);
 
-    const applyMetrics = (m = {}) => {
-      safeText($("#metric-vault"), `$${fmtMoney(m.vault ?? 0)}`);
-      safeText($("#metric-inflation"), fmtFixed(m.inflation ?? 1, 2));
-      safeText($("#metric-taxrate"), `${fmtFixed(m.taxrate ?? 0, 1)}%`);
-      safeText($("#metric-today"), `$${fmtMoney(m.today ?? 0)}`);
-    };
+      // Auto-focus first input
+      setTimeout(() => {
+        const input = card.querySelector('.form-input, .form-select');
+        if (input && !input.disabled) input.focus();
+      }, 100);
+    },
 
-    const applySettings = (s = {}) => {
-      state.draft = deepClone(s);
+    close() {
+      this.show(false);
+      this.hideAllCards();
+      postNUI('forceClose');
+    },
 
-      const r = root();
-      if (!r) return;
+    setBusy(busy, timeoutMs = 0) {
+      State.busy = !!busy;
 
-      ["inflation", "taxrate"].forEach((k) => {
-        const mode = String(getByPath(state.draft, `mode.${k}`) || "auto").toLowerCase();
-        const btns = $$(`.seg[data-setting="mode.${k}"]`, r);
-        btns.forEach((b) => b.classList.remove("is-active"));
-        const active = btns.find((b) => String(b.dataset.mode || "").toLowerCase() === mode);
-        active && active.classList.add("is-active");
-
-        const inputId = k === "inflation" ? "manual-inflation" : "manual-taxrate";
-        const input = document.getElementById(inputId);
-        if (input) {
-          input.disabled = mode !== "manual";
-          input.style.opacity = mode === "manual" ? "1" : "0.5";
-        }
+      $$('[data-action], .btn').forEach((btn) => {
+        btn.disabled = State.busy;
+        btn.style.opacity = State.busy ? '0.6' : '1';
+        btn.style.pointerEvents = State.busy ? 'none' : 'auto';
       });
 
-      const mi = document.getElementById("manual-inflation");
-      if (mi) mi.value = String(getByPath(state.draft, "manual.inflation") ?? "");
+      if (busy && timeoutMs > 0) {
+        setTimeout(() => this.setBusy(false), timeoutMs);
+      }
+    },
 
-      const mt = document.getElementById("manual-taxrate");
-      if (mt) mt.value = String(getByPath(state.draft, "manual.taxrate") ?? "");
+    setDirty(dirty) {
+      State.isDirty = !!dirty;
+      const badge = $('#unsaved-badge');
+      const saveBtn = $('#save-settings-btn');
 
-      state.ready = true;
-      setDirty(false);
-    };
+      if (badge) badge.classList.toggle('hidden', !State.isDirty);
+      if (saveBtn) {
+        saveBtn.disabled = !State.isDirty;
+        saveBtn.style.opacity = State.isDirty ? '1' : '0.5';
+      }
+    },
 
-    const populateTaxSelect = () => {
-      const r = root();
-      const sel = $("#issue-tax-type", r);
-      if (!sel) return;
+    switchView(viewName) {
+      State.currentView = viewName;
 
-      const catalog = state.taxCatalog || DEFAULT_TAX_CATALOG;
-      const prev = sel.value;
+      $$('.view').forEach((v) => v.classList.remove('is-active'));
+      const view = $(`.view[data-view="${viewName}"]`);
+      if (view) view.classList.add('is-active');
 
-      sel.innerHTML = "";
-      catalog.forEach((it) => {
-        const opt = document.createElement("option");
-        opt.value = it.key;
-        opt.textContent = it.label;
-        sel.appendChild(opt);
+      $$('.nav-item').forEach((n) => n.classList.remove('is-active'));
+      const navItem = $(`.nav-item[data-view="${viewName}"]`);
+      if (navItem) navItem.classList.add('is-active');
+    },
+  };
+
+  // ===========================
+  // ADMIN MODULE
+  // ===========================
+  const Admin = {
+    DEFAULT_TAX_CATALOG: [
+      { key: 'IPTU', label: 'IPTU', mode: 'base_percent', percent: 0.3 },
+      { key: 'IPVA', label: 'IPVA', mode: 'base_percent', percent: 1.5 },
+      { key: 'IRPF', label: 'Imposto de Renda', mode: 'base_percent', percent: 2.0 },
+      { key: 'ICMS', label: 'ICMS', mode: 'base_percent', percent: 12.0 },
+      { key: 'ISS', label: 'ISS', mode: 'base_percent', percent: 2.0 },
+      { key: 'ADMIN_FINE', label: 'Multa Administrativa', mode: 'fixed', fixed: 1000 },
+      { key: 'GOV_FEE', label: 'Taxa Governamental', mode: 'fixed', fixed: 500 },
+      { key: 'OUTRO', label: 'Outro', mode: 'fixed', fixed: 0 },
+    ],
+
+    open(payload = {}) {
+      UI.showCard('admin-container', 'grid');
+      UI.switchView('overview');
+
+      this.applyState(payload);
+      this.requestData('admin_state');
+    },
+
+    applyState(data = {}) {
+      const metrics = data.metrics || {};
+      const settings = data.settings || {};
+
+      State.taxCatalog = data.taxCatalog || settings.taxCatalog || this.DEFAULT_TAX_CATALOG;
+
+      // Update metrics
+      setElementText($('#metric-vault'), formatMoney(metrics.vault || 0));
+      setElementText($('#metric-inflation'), formatDecimal(metrics.inflation || 1, 2));
+      setElementText($('#metric-taxrate'), `${formatDecimal(metrics.taxrate || 0, 1)}%`);
+      setElementText($('#metric-today'), formatMoney(metrics.today || 0));
+
+      // Apply settings
+      if (!State.isDirty) {
+        State.adminDraft = deepClone(settings);
+        this.applySettings(settings);
+      }
+
+      this.populateTaxSelect();
+    },
+
+    applySettings(settings = {}) {
+      // Inflation mode
+      const inflationMode = String(getByPath(settings, 'mode.inflation') || 'auto').toLowerCase();
+      $$('.segmented-btn[data-setting="mode.inflation"]').forEach((btn) => {
+        btn.classList.toggle('is-active', btn.dataset.value === inflationMode);
       });
 
-      if (prev && catalog.some((x) => x.key === prev)) sel.value = prev;
-      else sel.value = catalog[0]?.key || "OUTRO";
-    };
+      const inflationInput = $('#manual-inflation');
+      if (inflationInput) {
+        inflationInput.disabled = inflationMode !== 'manual';
+        inflationInput.value = String(getByPath(settings, 'manual.inflation') ?? '');
+      }
 
-    const calculatePreview = () => {
-      const r = root();
-      const taxKey = $("#issue-tax-type", r)?.value;
-      const catalog = state.taxCatalog || DEFAULT_TAX_CATALOG;
-      const type = catalog.find((x) => x.key === taxKey);
+      // Tax rate mode
+      const taxrateMode = String(getByPath(settings, 'mode.taxrate') || 'auto').toLowerCase();
+      $$('.segmented-btn[data-setting="mode.taxrate"]').forEach((btn) => {
+        btn.classList.toggle('is-active', btn.dataset.value === taxrateMode);
+      });
 
-      const base = parsePositiveInt($("#issue-base", r)?.value);
-      if (!type || !base) {
-        setStatus("");
-        safeText($("#issue-preview", r), "—");
+      const taxrateInput = $('#manual-taxrate');
+      if (taxrateInput) {
+        taxrateInput.disabled = taxrateMode !== 'manual';
+        taxrateInput.value = String(getByPath(settings, 'manual.taxrate') ?? '');
+      }
+    },
+
+    populateTaxSelect() {
+      const select = $('#tax-type');
+      if (!select) return;
+
+      const catalog = State.taxCatalog;
+      const currentValue = select.value;
+
+      select.innerHTML = '';
+      catalog.forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item.key;
+        option.textContent = item.label;
+        select.appendChild(option);
+      });
+
+      if (currentValue && catalog.some((x) => x.key === currentValue)) {
+        select.value = currentValue;
+      } else {
+        select.value = catalog[0]?.key || 'OUTRO';
+      }
+    },
+
+    calculateTaxPreview() {
+      const taxKey = $('#tax-type')?.value;
+      const baseValue = parsePositiveInt($('#tax-base')?.value);
+
+      const taxType = State.taxCatalog.find((x) => x.key === taxKey);
+      const preview = $('#tax-preview');
+      const previewText = $('#tax-preview-text');
+
+      if (!taxType || !baseValue) {
+        if (preview) preview.classList.add('hidden');
         return;
       }
 
       let amount = 0;
-      if (type.mode === "base_percent") {
-        const pct = Number(type.percent || 0);
-        amount = Math.floor(base * (pct / 100));
-        safeText(
-          $("#issue-preview", r),
-          `Base $${fmtMoney(base)} × ${fmtFixed(pct, 2)}% = $${fmtMoney(amount)}`
-        );
+      let text = '';
+
+      if (taxType.mode === 'base_percent') {
+        const percent = Number(taxType.percent || 0);
+        amount = Math.floor(baseValue * (percent / 100));
+        text = `Base ${formatMoney(baseValue)} × ${formatDecimal(percent, 2)}% = ${formatMoney(amount)}`;
       } else {
-        amount = Math.floor(Number(type.fixed || 0));
-        safeText($("#issue-preview", r), `Valor fixo = $${fmtMoney(amount)}`);
+        amount = Math.floor(Number(taxType.fixed || 0));
+        text = `Valor fixo = ${formatMoney(amount)}`;
       }
 
-      const amountEl = $("#issue-amount", r);
-      if (amountEl) amountEl.value = String(amount);
+      const amountInput = $('#tax-amount');
+      if (amountInput) amountInput.value = String(amount);
 
-      const reasonEl = $("#issue-reason", r);
-      if (reasonEl && !reasonEl.value) reasonEl.value = type.label;
-      setStatus("");
-    };
+      const reasonInput = $('#tax-reason');
+      if (reasonInput && !reasonInput.value) reasonInput.value = taxType.label;
 
-    const request = (dataType, payload) => {
-      if (Busy.get()) return;
-      Busy.set(true, 2500);
-      post("admin_requestData", { dataType, payload });
-    };
+      if (preview && previewText) {
+        previewText.textContent = text;
+        preview.classList.remove('hidden');
+      }
+    },
 
-    const save = () => {
-      if (!state.ready || !state.draft || Busy.get()) return;
-      Busy.set(true, 5000);
-      post("admin_requestData", { dataType: "admin_saveSettings", payload: state.draft });
-      setDirty(false);
-    };
+    submitTax() {
+      if (State.busy) return;
 
-    const submitTax = () => {
-      if (Busy.get()) return;
+      const targetMode = $('#tax-target-mode')?.value || 'citizenid';
+      const citizenid = String($('#tax-citizenid')?.value || '').trim();
+      const type = $('#tax-type')?.value || 'OUTRO';
+      const base = parsePositiveInt($('#tax-base')?.value);
+      const amount = parsePositiveInt($('#tax-amount')?.value);
+      const reason = String($('#tax-reason')?.value || '').trim();
 
-      const r = root();
-      const targetMode = $("#issue-target-mode", r)?.value || "citizenid";
-      const citizenid = String($("#issue-citizenid", r)?.value || "").trim();
+      // Validations
+      if (!amount || amount <= 0) return alert('Valor inválido');
+      if (targetMode === 'citizenid' && !citizenid) return alert('Informe o CitizenID');
+      if (!reason || reason.length < 3) return alert('Informe um motivo válido (mín. 3 caracteres)');
 
-      const payload = {
-        targetMode,
-        citizenid,
-        type: $("#issue-tax-type", r)?.value || "OUTRO",
-        base: parsePositiveInt($("#issue-base", r)?.value),
-        amount: parsePositiveInt($("#issue-amount", r)?.value),
-        reason: String($("#issue-reason", r)?.value || "").trim(),
-      };
+      UI.setBusy(true, 5000);
 
-      if (!payload.amount) return setStatus("Valor inválido.", "error");
-      if (targetMode === "citizenid" && !citizenid) return setStatus("Informe o CitizenID.", "error");
+      postNUI('admin_requestData', {
+        dataType: 'admin_issueTaxDebt',
+        payload: { targetMode, citizenid, type, base, amount, reason },
+      });
 
-      Busy.set(true, 5000);
-      setStatus("Enviando...", "warn");
-      request("admin_issueTaxDebt", payload);
-
+      // Clear form after submission
       setTimeout(() => {
-        setStatus("Solicitação enviada.", "ok");
-        Busy.set(false);
-      }, 450);
-    };
+        ['#tax-base', '#tax-amount', '#tax-reason'].forEach((selector) => {
+          const input = $(selector);
+          if (input) input.value = '';
+        });
+        const preview = $('#tax-preview');
+        if (preview) preview.classList.add('hidden');
+      }, 500);
+    },
 
-    const bind = () => {
-      const r = root();
-      if (!r) return;
+    saveSettings() {
+      if (!State.adminDraft || State.busy) return;
 
-      r.addEventListener("click", (e) => {
-        const nav = e.target.closest("[data-nav]");
-        if (nav) return setActiveView(nav.dataset.nav);
+      UI.setBusy(true, 3000);
+      postNUI('admin_requestData', {
+        dataType: 'admin_saveSettings',
+        payload: State.adminDraft,
+      });
 
-        const seg = e.target.closest(".seg");
-        if (seg && state.draft) {
-          const key = seg.dataset.setting;
-          const mode = seg.dataset.mode;
-          if (key && mode) {
-            setByPath(state.draft, key, mode);
-            applySettings(state.draft);
-            setDirty(true);
+      UI.setDirty(false);
+    },
+
+    requestData(dataType, payload = null) {
+      if (State.busy) return;
+      UI.setBusy(true, 3000);
+      postNUI('admin_requestData', { dataType, payload });
+    },
+  };
+
+  // ===========================
+  // LOANS MODULE
+  // ===========================
+  const Loans = {
+    simulateLoan() {
+      const citizenid = String($('#loan-citizenid')?.value || '').trim();
+      const amount = parsePositiveInt($('#loan-amount')?.value);
+      const installments = parsePositiveInt($('#loan-installments')?.value);
+
+      const resultContainer = $('#loan-simulation-result');
+      const detailsContainer = $('#loan-sim-details');
+
+      if (!citizenid || !amount || !installments) {
+        if (resultContainer) resultContainer.classList.add('hidden');
+        return alert('Preencha todos os campos');
+      }
+
+      // Mock calculation (can be connected to backend)
+      const interestRate = 2.5; // 2.5% per month
+      const totalInterest = amount * (interestRate / 100) * installments;
+      const totalAmount = amount + totalInterest;
+      const monthlyPayment = Math.floor(totalAmount / installments);
+
+      if (resultContainer && detailsContainer) {
+        detailsContainer.innerHTML = `
+          <div class="info-item">
+            <span class="info-label">Valor Solicitado</span>
+            <span class="money">${formatMoney(amount)}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Taxa de Juros (${formatDecimal(interestRate, 1)}% a.m.)</span>
+            <span class="money">${formatMoney(totalInterest)}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Total a Pagar</span>
+            <span class="money">${formatMoney(totalAmount)}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Parcela Mensal</span>
+            <span class="info-value">${formatMoney(monthlyPayment)} × ${installments} meses</span>
+          </div>
+        `;
+        resultContainer.classList.remove('hidden');
+      }
+    },
+  };
+
+  // ===========================
+  // DEBT MODULE
+  // ===========================
+  const Debts = {
+    showList(debts = []) {
+      const tbody = $('#debt-list-tbody');
+      if (!tbody) return;
+
+      if (!Array.isArray(debts) || debts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Nenhuma dívida encontrada</td></tr>';
+      } else {
+        tbody.innerHTML = debts.map((d) => `
+          <tr>
+            <td>${String(d.playerName || 'Desconhecido')}</td>
+            <td>${String(d.citizenid || '-')}</td>
+            <td>${formatMoney(d.amount || 0)}</td>
+            <td>${String(d.reason || '-')}</td>
+          </tr>
+        `).join('');
+      }
+
+      UI.showCard('debt-list-modal');
+    },
+
+    showDetail(debt = {}) {
+      setElementText($('#debt-detail-name'), debt.playerName || 'Desconhecido');
+      setElementText($('#debt-detail-citizenid'), debt.citizenid || '-');
+      setElementText($('#debt-detail-amount'), formatMoney(debt.amount || 0));
+      setElementText($('#debt-detail-reason'), debt.reason || '-');
+
+      UI.showCard('debt-detail-modal');
+    },
+  };
+
+  // ===========================
+  // INPUT MODAL HELPER
+  // ===========================
+  const InputModal = {
+    show(title, label, placeholder, callback, inputType = 'text') {
+      setElementText($('#input-modal-title'), title);
+      setElementText($('#input-modal-label'), label);
+
+      const input = $('#input-modal-field');
+      if (input) {
+        input.type = inputType;
+        input.placeholder = placeholder;
+        input.value = '';
+      }
+
+      State.inputModal.callback = callback;
+      State.inputModal.type = inputType;
+
+      UI.showCard('input-modal');
+    },
+
+    confirm() {
+      const input = $('#input-modal-field');
+      const value = input?.value?.trim() || '';
+
+      if (!value) return alert('Preencha o campo');
+
+      if (State.inputModal.callback) {
+        State.inputModal.callback(value);
+      }
+
+      UI.close();
+    },
+  };
+
+  // ===========================
+  // LOGS MODULE
+  // ===========================
+  const Logs = {
+    render(logs = []) {
+      const tbody = $('#logs-table tbody');
+      if (!tbody) return;
+
+      if (!Array.isArray(logs) || logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Nenhum log disponível</td></tr>';
+      } else {
+        tbody.innerHTML = logs.map((l) => `
+          <tr>
+            <td>${String(l.timestamp || '-')}</td>
+            <td>${String(l.category || '-')}</td>
+            <td>${String(l.message || '-')}</td>
+          </tr>
+        `).join('');
+      }
+    },
+  };
+
+  // ===========================
+  // ACTION ROUTER
+  // ===========================
+  const Actions = {
+    // Admin actions
+    'refresh-admin'() { Admin.requestData('admin_state'); },
+    'reset-settings'() {
+      if (confirm('Restaurar configurações padrão?')) {
+        UI.setDirty(true);
+        State.adminDraft = {};
+        Admin.applySettings({});
+      }
+    },
+
+    // Tax actions
+    'calc-tax'() { Admin.calculateTaxPreview(); },
+    'submit-tax'() { Admin.submitTax(); },
+
+    // Treasury quick actions
+    'quick-vault'() { Admin.requestData('viewVault'); },
+    'quick-deposit'() {
+      InputModal.show('Depositar no Tesouro', 'Valor', 'Digite o valor', (value) => {
+        const amount = parsePositiveInt(value);
+        if (amount) Admin.requestData('addVault', { amount });
+      }, 'number');
+    },
+    'quick-withdraw'() {
+      InputModal.show('Sacar do Tesouro', 'Valor', 'Digite o valor', (value) => {
+        const amount = parsePositiveInt(value);
+        if (amount) Admin.requestData('withdrawVault', { amount });
+      }, 'number');
+    },
+    'quick-debts'() { Admin.requestData('debts_active'); },
+
+    // Debt actions
+    'refresh-debts'() { Admin.requestData('debts_stats'); },
+    'list-all-debts'() { Admin.requestData('debts_active'); },
+    'search-debt'() {
+      const citizenid = String($('#debt-search-citizenid')?.value || '').trim();
+      if (!citizenid) return alert('Informe o CitizenID');
+      Admin.requestData('specific_debt', citizenid);
+    },
+
+    // Loan actions
+    'refresh-loans'() { Admin.requestData('loans_stats'); },
+    'list-all-loans'() { Admin.requestData('loans_list'); },
+    'simulate-loan'() { Loans.simulateLoan(); },
+
+    // Installment actions
+    'refresh-installments'() { Admin.requestData('installments_stats'); },
+    'list-all-installments'() { Admin.requestData('installments_list'); },
+    'search-installment'() {
+      const citizenid = String($('#installment-search-citizenid')?.value || '').trim();
+      if (!citizenid) return alert('Informe o CitizenID');
+      Admin.requestData('search_installment', { citizenid });
+    },
+
+    // Treasury actions
+    'treasury-deposit'() { this['quick-deposit'](); },
+    'treasury-withdraw'() { this['quick-withdraw'](); },
+    'treasury-history'() { alert('Funcionalidade em desenvolvimento'); },
+
+    // Logs
+    'refresh-logs'() { Admin.requestData('admin_logs', { limit: 100 }); },
+
+    // Payment modal
+    'confirm-payment'() {
+      if (State.busy) return;
+      UI.setBusy(true, 3000);
+      postNUI('payTax', { tax: State.payment.amount, reason: State.payment.reason });
+      UI.close();
+    },
+    'refuse-payment'() {
+      postNUI('refuseTax', { tax: State.payment.amount, reason: State.payment.reason });
+      UI.close();
+    },
+  };
+
+  // ===========================
+  // EVENT LISTENERS
+  // ===========================
+  function initEventListeners() {
+    // Global close buttons
+    $$('[data-close]').forEach((btn) => {
+      btn.addEventListener('click', () => UI.close());
+    });
+
+    // Navigation
+    $$('.nav-item[data-view]').forEach((btn) => {
+      btn.addEventListener('click', () => UI.switchView(btn.dataset.view));
+    });
+
+    // Action buttons
+    document.addEventListener('click', (e) => {
+      const actionBtn = e.target.closest('[data-action]');
+      if (actionBtn) {
+        const action = actionBtn.dataset.action;
+        if (Actions[action]) {
+          log('Action:', action);
+          Actions[action]();
+        } else {
+          error('Unknown action:', action);
+        }
+      }
+
+      // Dashboard cards
+      const dashCard = e.target.closest('.dashboard-card[data-action]');
+      if (dashCard) {
+        const action = dashCard.dataset.action;
+        if (Actions[action]) Actions[action]();
+      }
+
+      // Tax chips
+      const chip = e.target.closest('.chip[data-tax]');
+      if (chip) {
+        $$('.chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        const select = $('#tax-type');
+        if (select) select.value = chip.dataset.tax;
+        Admin.calculateTaxPreview();
+      }
+
+      // Segmented control
+      const segBtn = e.target.closest('.segmented-btn[data-setting]');
+      if (segBtn && State.adminDraft) {
+        const setting = segBtn.dataset.setting;
+        const value = segBtn.dataset.value;
+
+        setByPath(State.adminDraft, setting, value);
+        Admin.applySettings(State.adminDraft);
+        UI.setDirty(true);
+      }
+    });
+
+    // Form inputs for settings
+    ['#manual-inflation', '#manual-taxrate'].forEach((selector) => {
+      const input = $(selector);
+      if (input) {
+        input.addEventListener('input', (e) => {
+          const path = selector.includes('inflation') ? 'manual.inflation' : 'manual.taxrate';
+          const value = parseNumber(e.target.value);
+          if (State.adminDraft) {
+            setByPath(State.adminDraft, path, value);
+            UI.setDirty(true);
           }
-          return;
-        }
+        });
+      }
+    });
 
-        const action = e.target.closest("[data-action]")?.dataset?.action;
-        if (action) {
-          if (action === "refreshAdmin") request("admin_state");
-          if (action === "saveAdminSettings" && state.dirty) save();
-          if (action === "fetchLogs") request("admin_logs", { limit: 80 });
-
-          if (action === "issueCalc") calculatePreview();
-          if (action === "issueSubmit") submitTax();
-
-          if (["viewVault", "addVault", "withdrawVault", "viewDebts"].includes(action)) request(action);
-
-          if (action === "viewSpecificDebt") showDebtInput("specific_debt", "Buscar Dívida");
-          if (action === "collectDebt") showDebtInput("collect_debt", "Cobrar Dívida");
-        }
-
-        const chip = e.target.closest("[data-tax]");
-        if (chip) {
-          const sel = $("#issue-tax-type", r);
-          if (sel) sel.value = chip.dataset.tax;
-          calculatePreview();
+    // Tax target mode change
+    const taxTargetMode = $('#tax-target-mode');
+    if (taxTargetMode) {
+      taxTargetMode.addEventListener('change', (e) => {
+        const group = $('#tax-citizenid-group');
+        if (group) {
+          group.style.display = e.target.value === 'citizenid' ? 'block' : 'none';
         }
       });
+    }
 
-      r.addEventListener("input", (e) => {
-        const el = e.target;
-        const path = el?.dataset?.setting;
-        if (!path || !state.draft) return;
+    // Save settings button
+    const saveBtn = $('#save-settings-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => Admin.saveSettings());
+    }
 
-        let val = el.value;
-        if (el.type === "number") val = parseNumber(val);
-        setByPath(state.draft, path, val);
-        setDirty(true);
-      });
+    // Input modal confirm
+    const inputConfirm = $('#input-modal-confirm');
+    if (inputConfirm) {
+      inputConfirm.addEventListener('click', () => InputModal.confirm());
+    }
 
-      $("#issue-target-mode", r)?.addEventListener("change", (e) => {
-        const wrap = $("#issue-citizenid-wrap", r);
-        if (wrap) wrap.style.display = e.target.value === "citizenid" ? "block" : "none";
-      });
-    };
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && State.uiOpen) {
+        UI.close();
+      }
 
-    const applyState = (data) => {
-      const metrics = data.metrics || {};
-      const settings = data.settings || {};
+      if (e.key === 'Enter' && State.uiOpen) {
+        const activeElement = document.activeElement;
+        if (activeElement && activeElement.tagName === 'TEXTAREA') return;
 
-      if (data.taxCatalog || settings.taxCatalog) state.taxCatalog = data.taxCatalog || settings.taxCatalog;
+        // Find visible card with primary button
+        const visibleCard = $$('.card').find((c) => {
+          const style = window.getComputedStyle(c);
+          return style.display !== 'none';
+        });
 
-      applyMetrics(metrics);
-      populateTaxSelect();
-      if (!state.dirty) applySettings(settings);
-    };
-
-    const open = (payload) => {
-      openPanel("admin-dashboard-container");
-      setActiveView("overview");
-      state.ready = false;
-      state.dirty = false;
-      if (payload) applyState(payload);
-      request("admin_state");
-    };
-
-    return { bind, open, applyState, renderLogs: renderAdminLogs };
-  })();
-
-  // -----------------------------
-  // Generic modal input (Debt)
-  // -----------------------------
-  function showDebtInput(action, title) {
-    safeText($("#debt-input-title"), title);
-    const input = $("#debt-citizenid-input");
-    if (input) input.value = "";
-
-    const cont = $("#debt-input-container");
-    if (cont) cont.dataset.action = action;
-
-    openPanel("debt-input-container");
-    Busy.set(false);
+        if (visibleCard) {
+          const primaryBtn = visibleCard.querySelector('.btn-primary:not([disabled])');
+          if (primaryBtn) primaryBtn.click();
+        }
+      }
+    });
   }
 
-  $("#debt-input-confirm")?.addEventListener("click", () => {
-    const cont = $("#debt-input-container");
-    const action = cont?.dataset?.action;
-    const cid = String($("#debt-citizenid-input")?.value || "").trim();
-    if (!action || !cid || Busy.get()) return;
-
-    Busy.set(true, 5000);
-    post("admin_requestData", { dataType: action, payload: cid });
-    closeAllPanels(true);
-  });
-
-  // -----------------------------
-  // NUI messages (lua -> js)
-  // -----------------------------
-  window.addEventListener("message", (event) => {
+  // ===========================
+  // NUI MESSAGE HANDLER
+  // ===========================
+  window.addEventListener('message', (event) => {
     const data = event.data || {};
     const action = data.action;
 
-    if (action) log("MSG:", action, data);
+    if (!action) return;
+    log('NUI Message:', action, data);
 
     switch (action) {
-      case "close":
-        closeAllPanels(false);
+      case 'close':
+        UI.close();
         break;
 
-      case "open": {
-        post("ready", { ok: true });
+      case 'open': {
+        postNUI('ready', { ok: true });
 
-        const mode = String(data.mode || "");
+        const mode = String(data.mode || '');
         const payload = data.payload || {};
 
-        if (mode === "admin") {
+        if (mode === 'admin') {
           Admin.open(payload);
-          break;
+        } else if (mode === 'payment') {
+          State.payment.amount = Number(payload.tax || 0);
+          State.payment.reason = String(payload.reason || '—');
+          setElementText($('#payment-amount'), formatMoney(State.payment.amount));
+          setElementText($('#payment-reason'), State.payment.reason);
+          UI.showCard('payment-modal');
         }
-
-        if (mode === "vault_view") {
-          safeText($("#vault-balance-value"), `$${fmtMoney(payload.balance)}`);
-          openPanel("vault-view-container");
-          break;
-        }
-
-        if (mode === "vault_add") {
-          $("#add-amount-input") && ($("#add-amount-input").value = "");
-          openPanel("vault-add-container");
-          break;
-        }
-
-        if (mode === "vault_withdraw") {
-          $("#withdraw-amount-input") && ($("#withdraw-amount-input").value = "");
-          openPanel("vault-withdraw-container");
-          break;
-        }
-
-        if (mode === "tax") {
-          $("#calculator-input") && ($("#calculator-input").value = "");
-          openPanel("calculator-container");
-          break;
-        }
-
-        if (mode === "payment") {
-          Payment.tax = Number(payload.tax || 0);
-          Payment.reason = String(payload.reason || "—");
-          safeText($("#tax-value"), `$${fmtMoney(Payment.tax)}`);
-          safeText($("#tax-reason"), Payment.reason);
-          openPanel("payment-container");
-          break;
-        }
-
         break;
       }
 
-      case "adminData": {
+      case 'adminData': {
         const key = data.key;
         const d = data.data;
 
-        if (key === "admin_state") {
+        if (key === 'admin_state') {
           Admin.applyState(d || {});
-          Busy.set(false);
-          break;
+        } else if (key === 'admin_logs') {
+          Logs.render((d && d.logs) || []);
+        } else if (key === 'debts_active') {
+          Debts.showList(d || []);
+        } else if (key === 'specific_debt' || key === 'debt_specific') {
+          Debts.showDetail(d || {});
+        } else if (key === 'loans_stats') {
+          const stats = d || {};
+          setElementText($('#loans-total'), formatMoney(stats.totalActive || 0));
+          setElementText($('#loans-avg-rate'), `${formatDecimal(stats.avgRate || 0, 1)}%`);
+          setElementText($('#loans-count'), stats.count || 0);
+        } else if (key === 'installments_stats') {
+          const stats = d || {};
+          setElementText($('#installments-total'), formatMoney(stats.totalActive || 0));
+          setElementText($('#installments-count'), stats.count || 0);
+        } else if (key === 'debts_stats') {
+          const stats = d || {};
+          setElementText($('#debts-total'), formatMoney(stats.totalActive || 0));
+          setElementText($('#debts-count'), stats.count || 0);
         }
 
-        if (key === "admin_logs") {
-          Admin.renderLogs((d && d.logs) || []);
-          Busy.set(false);
-          break;
-        }
-
-        if (key === "debts_active") {
-          renderDebtList(d || []);
-          openPanel("debt-list-container");
-          Busy.set(false);
-          break;
-        }
-
-        if (key === "debt_specific") {
-          const row = d || {};
-          safeText($("#debt-detail-name"), row.playerName || "Desconhecido");
-          safeText($("#debt-detail-citizenid"), row.citizenid || "-");
-          safeText($("#debt-detail-amount"), `$${fmtMoney(row.amount || 0)}`);
-          safeText($("#debt-detail-reason"), row.reason || "-");
-          openPanel("debt-detail-container");
-          Busy.set(false);
-          break;
-        }
-
-        Busy.set(false);
+        UI.setBusy(false);
         break;
       }
 
       default:
-        break;
+        log('Unhandled action:', action);
     }
   });
 
-  // -----------------------------
-  // Global bindings
-  // -----------------------------
-  $$("[data-close-button]").forEach((btn) => {
-    btn.addEventListener("click", () => closeAllPanels(true));
-  });
+  // ===========================
+  // INITIALIZATION
+  // ===========================
+  function init() {
+    log('Initializing Space Economy UI v5.0...');
+    initEventListeners();
+    UI.show(false);
+    log('UI Ready!');
+  }
 
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeAllPanels(true);
-    if (e.key === "Enter") {
-      const active = document.activeElement;
-      if (active && active.tagName === "TEXTAREA") return;
-
-      const visible = $$(".card").find((c) => getComputedStyle(c).display !== "none");
-      if (!visible) return;
-
-      const primary = visible.querySelector(".button.primary:not([disabled])");
-      if (primary) primary.click();
-    }
-  });
-
-  // Payment
-  $("#pay")?.addEventListener("click", () => {
-    if (Busy.get()) return;
-    Busy.set(true, 5000);
-    post("payTax", { tax: Payment.tax, reason: Payment.reason });
-    setTimeout(() => {
-      safeText($("#success-message"), `Taxa de $${fmtMoney(Payment.tax)} paga com sucesso.`);
-      openPanel("success-container");
-      Busy.set(false);
-    }, 250);
-  });
-
-  $("#refuse")?.addEventListener("click", () => {
-    if (Busy.get()) return;
-    post("refuseTax", { tax: Payment.tax, reason: Payment.reason });
-    closeAllPanels(true);
-  });
-
-  // Vault
-  $("#add-vault-confirm")?.addEventListener("click", () => {
-    const amt = parsePositiveInt($("#add-amount-input")?.value);
-    if (!amt || Busy.get()) return;
-    Busy.set(true, 5000);
-    post("admin_requestData", { dataType: "addVault", payload: { amount: amt } });
-    closeAllPanels(true);
-  });
-
-  $("#withdraw-vault-confirm")?.addEventListener("click", () => {
-    const amt = parsePositiveInt($("#withdraw-amount-input")?.value);
-    if (!amt || Busy.get()) return;
-    Busy.set(true, 5000);
-    post("admin_requestData", { dataType: "withdrawVault", payload: { amount: amt } });
-    closeAllPanels(true);
-  });
-
-  // Calculator
-  $("#calculator-confirm")?.addEventListener("click", () => {
-    const amount = parsePositiveInt($("#calculator-input")?.value);
-    if (!amount || Busy.get()) return;
-    Busy.set(true, 2500);
-    post("calculateTax", { amount });
-    setTimeout(() => Busy.set(false), 300);
-  });
-
-  // Init
-  Admin.bind();
-  showUI(false);
+  // Start when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
