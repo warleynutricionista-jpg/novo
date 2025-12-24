@@ -29,6 +29,8 @@
           <button class="nav-item is-active" data-nav="overview"><span class="icon">📊</span> <span>Geral</span></button>
           <button class="nav-item" data-nav="controls"><span class="icon">⚙️</span> <span>Controles</span></button>
           <button class="nav-item" data-nav="taxes"><span class="icon">🧾</span> <span>Tributos</span></button>
+          <button class="nav-item" data-nav="loans"><span class="icon">💰</span> <span>Empréstimos</span></button>
+          <button class="nav-item" data-nav="installments"><span class="icon">📅</span> <span>Parcelamentos</span></button>
           <button class="nav-item" data-nav="actions"><span class="icon">⚡</span> <span>Ações</span></button>
           <button class="nav-item" data-nav="logs"><span class="icon">📝</span> <span>Logs</span></button>
         </aside>
@@ -139,6 +141,91 @@
 
               <div class="info-item" style="margin-top:10px;"><span id="issue-preview">—</span></div>
               <div id="issue-status" class="inline-status" style="display:none;"></div>
+            </div>
+          </div>
+
+          <!-- LOANS -->
+          <div class="view" data-view="loans">
+            <div class="panel">
+              <h3 class="panel-title">Gestão de Empréstimos</h3>
+
+              <div class="info-item">
+                <span class="info-label">Total Emprestado</span>
+                <span class="money" id="loans-total-active">$0</span>
+              </div>
+
+              <div class="info-item">
+                <span class="info-label">Taxa Média</span>
+                <span id="loans-avg-rate">0%</span>
+              </div>
+
+              <div class="panel-actions">
+                <button class="button secondary" data-action="viewAllLoans">Ver Todos</button>
+                <button class="button primary" data-action="refreshLoans" data-busy-control="1">Atualizar</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3 class="panel-title">Simular Empréstimo (Teste)</h3>
+
+              <div class="form-grid">
+                <div class="field">
+                  <span class="field-label">CitizenID</span>
+                  <input type="text" id="loan-sim-citizenid" class="modern-input" placeholder="CitizenID do player">
+                </div>
+
+                <div class="field">
+                  <span class="field-label">Valor</span>
+                  <input type="number" id="loan-sim-amount" class="modern-input" placeholder="Valor do empréstimo">
+                </div>
+
+                <div class="field">
+                  <span class="field-label">Parcelas</span>
+                  <input type="number" id="loan-sim-installments" class="modern-input" placeholder="Número de parcelas" value="12">
+                </div>
+              </div>
+
+              <div id="loan-sim-result" class="info-item" style="display:none; margin-top:12px;"></div>
+
+              <div class="panel-actions">
+                <button class="button secondary" data-action="simulateLoan">Simular</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- INSTALLMENTS -->
+          <div class="view" data-view="installments">
+            <div class="panel">
+              <h3 class="panel-title">Parcelamentos Ativos</h3>
+
+              <div class="metrics-grid">
+                <div class="metric">
+                  <div class="metric-lbl">Total Ativo</div>
+                  <div class="metric-val" id="installments-total">$0</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-lbl">Planos Ativos</div>
+                  <div class="metric-val" id="installments-count">0</div>
+                </div>
+              </div>
+
+              <div class="panel-actions">
+                <button class="button secondary" data-action="viewAllInstallments">Ver Todos</button>
+                <button class="button primary" data-action="refreshInstallments" data-busy-control="1">Atualizar</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3 class="panel-title">Buscar Parcelamento</h3>
+
+              <div class="field">
+                <span class="field-label">CitizenID</span>
+                <input type="text" id="installment-search-citizenid" class="modern-input" placeholder="CitizenID">
+              </div>
+
+              <div class="panel-actions">
+                <button class="button primary" data-action="searchInstallment">Buscar</button>
+              </div>
             </div>
           </div>
 

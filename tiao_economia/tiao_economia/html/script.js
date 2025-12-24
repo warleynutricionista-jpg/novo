@@ -35,6 +35,17 @@
     return Number.isFinite(n) ? n : null;
   };
 
+  // Notification helper
+  const notify = (message, type = "inform") => {
+    // Visual feedback in UI
+    console.log(`[${type.toUpperCase()}] ${message}`);
+
+    // You can add toast notifications here if needed
+    if (type === "error") {
+      // Could show error modal or toast
+    }
+  };
+
   const deepClone = (v) => {
     try {
       return JSON.parse(JSON.stringify(v));
@@ -395,8 +406,11 @@
         reason: String($("#issue-reason", r)?.value || "").trim(),
       };
 
+      // Validations
       if (!payload.amount) return setStatus("Valor inválido.", "error");
+      if (payload.amount < 0) return setStatus("Valor não pode ser negativo.", "error");
       if (targetMode === "citizenid" && !citizenid) return setStatus("Informe o CitizenID.", "error");
+      if (!payload.reason || payload.reason.length < 3) return setStatus("Informe um motivo válido (mín. 3 caracteres).", "error");
 
       Busy.set(true, 5000);
       setStatus("Enviando...", "warn");
@@ -404,6 +418,13 @@
 
       setTimeout(() => {
         setStatus("Solicitação enviada.", "ok");
+        // Clear form after successful submission
+        const baseInput = $("#issue-base", r);
+        const amountInput = $("#issue-amount", r);
+        const reasonInput = $("#issue-reason", r);
+        if (baseInput) baseInput.value = "";
+        if (amountInput) amountInput.value = "";
+        if (reasonInput) reasonInput.value = "";
         Busy.set(false);
       }, 450);
     };
@@ -441,6 +462,16 @@
 
           if (action === "viewSpecificDebt") showDebtInput("specific_debt", "Buscar Dívida");
           if (action === "collectDebt") showDebtInput("collect_debt", "Cobrar Dívida");
+
+          // Loans
+          if (action === "refreshLoans") request("loans_stats");
+          if (action === "viewAllLoans") request("loans_list");
+          if (action === "simulateLoan") simulateLoan();
+
+          // Installments
+          if (action === "refreshInstallments") request("installments_stats");
+          if (action === "viewAllInstallments") request("installments_list");
+          if (action === "searchInstallment") searchInstallment();
         }
 
         const chip = e.target.closest("[data-tax]");
@@ -490,6 +521,82 @@
 
     return { bind, open, applyState, renderLogs: renderAdminLogs };
   })();
+
+  // -----------------------------
+  // Loans functions
+  // -----------------------------
+  function simulateLoan() {
+    const r = $("#admin-dashboard-container");
+    if (!r) return;
+
+    const citizenid = String($("#loan-sim-citizenid", r)?.value || "").trim();
+    const amount = parsePositiveInt($("#loan-sim-amount", r)?.value);
+    const installments = parsePositiveInt($("#loan-sim-installments", r)?.value);
+
+    if (!citizenid || !amount || !installments) {
+      const result = $("#loan-sim-result", r);
+      if (result) {
+        result.style.display = "block";
+        result.innerHTML = '<span class="info-label" style="color: var(--danger);">Preencha todos os campos</span>';
+      }
+      return;
+    }
+
+    if (Busy.get()) return;
+    Busy.set(true, 3000);
+
+    // Mock simulation (você pode conectar ao backend depois)
+    const interestRate = 2.5; // 2.5% ao mês
+    const totalInterest = amount * (interestRate / 100) * installments;
+    const totalAmount = amount + totalInterest;
+    const monthlyPayment = Math.floor(totalAmount / installments);
+
+    const result = $("#loan-sim-result", r);
+    if (result) {
+      result.style.display = "block";
+      result.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+          <div style="display: flex; justify-content: space-between;">
+            <span class="info-label">Valor Solicitado:</span>
+            <span class="info-strong">$${fmtMoney(amount)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span class="info-label">Taxa (${fmtFixed(interestRate, 1)}% a.m.):</span>
+            <span class="info-strong">$${fmtMoney(totalInterest)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span class="info-label">Total a Pagar:</span>
+            <span class="info-strong">$${fmtMoney(totalAmount)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span class="info-label">Parcela Mensal:</span>
+            <span class="info-strong">$${fmtMoney(monthlyPayment)} × ${installments}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    Busy.set(false);
+  }
+
+  function searchInstallment() {
+    const r = $("#admin-dashboard-container");
+    if (!r) return;
+
+    const citizenid = String($("#installment-search-citizenid", r)?.value || "").trim();
+
+    if (!citizenid) {
+      return;
+    }
+
+    if (Busy.get()) return;
+    Busy.set(true, 3000);
+
+    post("admin_requestData", {
+      dataType: "search_installment",
+      payload: { citizenid }
+    });
+  }
 
   // -----------------------------
   // Generic modal input (Debt)
@@ -608,6 +715,22 @@
           safeText($("#debt-detail-amount"), `$${fmtMoney(row.amount || 0)}`);
           safeText($("#debt-detail-reason"), row.reason || "-");
           openPanel("debt-detail-container");
+          Busy.set(false);
+          break;
+        }
+
+        if (key === "loans_stats") {
+          const stats = d || {};
+          safeText($("#loans-total-active"), `$${fmtMoney(stats.totalActive || 0)}`);
+          safeText($("#loans-avg-rate"), `${fmtFixed(stats.avgRate || 0, 1)}%`);
+          Busy.set(false);
+          break;
+        }
+
+        if (key === "installments_stats") {
+          const stats = d || {};
+          safeText($("#installments-total"), `$${fmtMoney(stats.totalActive || 0)}`);
+          safeText($("#installments-count"), stats.count || 0);
           Busy.set(false);
           break;
         }
