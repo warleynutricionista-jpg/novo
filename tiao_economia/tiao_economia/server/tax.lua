@@ -1,98 +1,107 @@
 --============================================================
--- space_economy - server/tax.lua
--- Imposto progressivo configurável (Config.TaxBrackets)
--- Exports: CalculateTax / GetInflationRate / GetTaxMultiplier
+-- space_economy - server/tax.lua (ATUALIZADO)
+-- Motor de cálculo de impostos e handlers para pagamento (usa SE.Integrations e locks)
 --============================================================
 SE = SE or {}
 SE.Tax = SE.Tax or {}
-
 local U = SE.Util
-local S = SE.State
+local cfg = Config or {}
 
-local function defaultBrackets()
-  return {
-    { min = 0,      max = 5000,    rate = 0.10 },
-    { min = 5000,   max = 25000,   rate = 0.15 },
-    { min = 25000,  max = 100000,  rate = 0.20 },
-    { min = 100000, max = nil,     rate = 0.25 },
-  }
-end
+local function dbg(...) if U and U.dbg then U.dbg(...) else print('^3[space_economy][tax]^7', ...) end end
 
-local function sanitizeBrackets(brackets)
-  if type(brackets) ~= 'table' or #brackets == 0 then
-    return defaultBrackets()
-  end
+local locks = SE.Locks or nil
+local integ = SE.Integrations or nil
 
-  local out = {}
-  for _, br in ipairs(brackets) do
-    if type(br) == 'table' then
-      local minv = U.toNumber(br.min, 0)
-      local maxv = br.max ~= nil and U.toNumber(br.max, nil) or nil
-      local rate = U.toNumber(br.rate, 0)
-
-      if minv < 0 then minv = 0 end
-      if maxv ~= nil and maxv <= minv then maxv = nil end
-      if rate < 0 then rate = 0 end
-
-      out[#out+1] = { min = minv, max = maxv, rate = rate }
-    end
-  end
-
-  if #out == 0 then return defaultBrackets() end
-
-  table.sort(out, function(a, b)
-    return (a.min or 0) < (b.min or 0)
-  end)
-
-  return out
-end
-
-local function getBrackets()
-  return sanitizeBrackets(Config and Config.TaxBrackets)
-end
-
---============================================================
--- Cálculo progressivo (faixa por faixa)
---============================================================
+-- Calcula imposto progressivo com base em Config.TaxBrackets
 function SE.Tax.Calculate(amount)
-  amount = U.toNumber(amount, 0)
+  amount = tonumber(amount) or 0
   if amount <= 0 then return 0 end
-
-  local tax = 0.0
-  local brackets = getBrackets()
-
-  for i = 1, #brackets do
-    local br = brackets[i]
-    local minv = U.toNumber(br.min, 0)
-    local maxv = br.max ~= nil and U.toNumber(br.max, nil) or nil
-    local rate = U.toNumber(br.rate, 0)
-
-    if amount > minv and rate > 0 then
-      local upper = maxv or amount
-      local taxable = math.min(amount, upper) - minv
-      if taxable > 0 then
-        tax = tax + (taxable * rate)
+  local brackets = cfg.TaxBrackets or {}
+  local tax = 0
+  for i, b in ipairs(brackets) do
+    local minv = tonumber(b.min) or 0
+    local maxv = b.max and tonumber(b.max) or nil
+    local rate = tonumber(b.rate) or 0
+    if (not maxv and amount > minv) or (maxv and amount > minv) then
+      local taxable
+      if not maxv then
+        taxable = math.max(0, amount - minv)
+      else
+        taxable = math.max(0, math.min(amount, maxv) - minv)
       end
+      tax = tax + (taxable * rate)
     end
   end
 
-  local mult = U.toNumber(S.taxMultiplier, Config and Config.TaxMultiplierDefault or 1.0)
-  tax = tax * mult
-
-  return U.toInt(tax, 0)
+  -- aplicar multiplicador e inflação
+  local mult = tonumber(SE.State.taxMultiplier) or (cfg.TaxMultiplierDefault or 1.0)
+  local inf = tonumber(SE.State.inflationRate) or (cfg.Inflation and cfg.Inflation.DefaultRate) or 1.0
+  tax = tax * mult * inf
+  return math.floor(tax + 0.5)
 end
 
---============================================================
--- Exports (compatibilidade)
---============================================================
-exports('CalculateTax', function(v)
-  return SE.Tax.Calculate(v)
+-- Handler: calcular imposto (retorna para o player via notificação)
+RegisterNetEvent('space_economy:server_calculateTax', function(amount)
+  local src = source
+  local tax = 0
+  pcall(function() tax = SE.Tax.Calculate(amount) end)
+  TriggerClientEvent('space_economy:client_notify', src, ('Imposto estimado: %s'):format(tostring(tax)), 'inform')
 end)
 
-exports('GetInflationRate', function()
-  return U.toNumber(S.inflationRate, 1.0)
-end)
+-- Handler: pagar imposto (usa lock por jogador e integração)
+RegisterNetEvent('space_economy:server_payTax', function(amount, reason)
+  local src = source
+  amount = tonumber(amount) or 0
+  reason = tostring(reason or 'Imposto')
+  if amount <= 0 then
+    TriggerClientEvent('space_economy:client_notify', src, 'Valor inválido para pagamento', 'error')
+    return
+  end
 
-exports('GetTaxMultiplier', function()
-  return U.toNumber(S.taxMultiplier, 1.0)
+  local lockKey = ('pay_tax:%s'):format(tostring(src))
+  local owner = ('src_%s'):format(tostring(src))
+  local lk = SE.Locks
+  if lk then
+    local ok = lk.AcquireBlocking(lockKey, owner, 30000, 5000, 50)
+    if not ok then
+      TriggerClientEvent('space_economy:client_notify', src, 'Outra operação financeira está em andamento, tente novamente.', 'error')
+      return
+    end
+  end
+
+  local success, err = false, nil
+  if SE.Integrations and SE.Integrations.RemoveMoney then
+    local res, rerr = SE.Integrations.RemoveMoney(src, amount, 'bank')
+    success = res == true
+    err = rerr
+  else
+    err = 'no_integration'
+  end
+
+  -- liberar lock
+  if lk then lk.Release(lockKey, owner, true) end
+
+  if not success then
+    TriggerClientEvent('space_economy:client_notify', src, 'Pagamento não concluído: '..tostring(err or 'unknown'), 'error')
+    return
+  end
+
+  -- adicionar ao tesouro
+  if SE.Treasury and SE.Treasury.Add then
+    SE.Treasury.Add(amount)
+  end
+
+  -- log
+  if MySQL then
+    pcall(function()
+      MySQL.execute('INSERT INTO se_logs (level, source, message, data) VALUES (?, ?, ?, ?)', {
+        'info',
+        'tax',
+        ('Pagamento: %s por %s'):format(tostring(amount), reason),
+        json.encode({ source = src })
+      })
+    end)
+  end
+
+  TriggerClientEvent('space_economy:client_notify', src, ('Pagamento confirmado: %s'):format(tostring(amount)), 'success')
 end)
