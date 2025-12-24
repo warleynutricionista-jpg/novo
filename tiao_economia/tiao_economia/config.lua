@@ -302,10 +302,66 @@ Config.AdvancedSystems = {
 Config.Experimental = {
   -- Programas sociais (bolsa família, etc)
   SocialPrograms = false,
-  
+
   -- Mercado de títulos públicos
   PublicBonds = false,
-  
+
   -- Previdência social
   SocialSecurity = false,
+}
+
+-- ============================================================
+-- MELHORIAS v3.1 (Performance, UX, Segurança)
+-- ============================================================
+
+-- Notificações Push Automáticas
+Config.DebtNotifications = {
+  Enabled = true,
+  IntervalMinutes = 60,          -- Notificar a cada 1 hora
+  MinDebtAmount = 1000,          -- Só notificar se dívida > 1000
+  ShowOnConnect = true,          -- Mostrar ao entrar no servidor
+  ShowOnDisconnect = false,      -- Mostrar ao sair
+  MaxDebtsToShow = 5,            -- Mostrar no máximo 5 dívidas
+}
+
+-- Sistema de Backup Automático
+Config.Backup = {
+  Enabled = true,
+  IntervalHours = 24,            -- Backup a cada 24 horas
+  RetentionDays = 30,            -- Manter backups por 30 dias
+  BackupOnShutdown = true,       -- Backup ao desligar servidor
+  BackupOnStart = false,         -- Backup ao iniciar
+  MinIntervalMinutes = 60,       -- Intervalo mínimo entre backups
+}
+
+-- Sistema de Recompensas (Bom Pagador)
+Config.PaymentRewards = {
+  Enabled = true,
+  DiscountTiers = {
+    { paymentsOnTime = 5,  discount = 0.02, label = 'Bronze' },   -- 2%
+    { paymentsOnTime = 10, discount = 0.05, label = 'Prata' },    -- 5%
+    { paymentsOnTime = 20, discount = 0.10, label = 'Ouro' },     -- 10%
+    { paymentsOnTime = 50, discount = 0.15, label = 'Platina' },  -- 15%
+  },
+  StreakResetDays = 14,
+  NotifyLevelUp = true,
+}
+
+-- Discord Webhooks Detalhados
+Config.DiscordWebhooks = {
+  Enabled = false, -- Ativar quando configurar os webhooks
+
+  Webhooks = {
+    treasury = '',  -- URL do webhook para transações do tesouro
+    debts = '',     -- URL do webhook para dívidas
+    admin = '',     -- URL do webhook para ações admin
+    alerts = '',    -- URL do webhook para alertas críticos
+    daily = '',     -- URL do webhook para relatórios diários
+  },
+
+  DailyReport = {
+    enabled = false,
+    hour = 20,      -- 20:00 (8 PM)
+    minute = 0,
+  }
 }
