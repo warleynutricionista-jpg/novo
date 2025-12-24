@@ -354,7 +354,7 @@ exports('CreateBackup', SE.Backup.Create)
 exports('RestoreBackup', SE.Backup.Restore)
 exports('ListBackups', SE.Backup.List)
 
-print(('^2[space_economy]^7 Backup system loaded - Interval: %dh | Retention: %d days'):format(
+print(string.format('^2[space_economy]^7 Backup system loaded - Interval: %dh | Retention: %d days',
     Config.IntervalHours,
     Config.RetentionDays
 ))

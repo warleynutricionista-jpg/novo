@@ -330,4 +330,4 @@ exports('ApplyDiscount', SE.Rewards.ApplyDiscount)
 exports('GetPlayerRewardInfo', SE.Rewards.GetPlayerInfo)
 exports('GetTopPayers', SE.Rewards.GetTopPayers)
 
-print('^2[space_economy]^7 Rewards system loaded - Tiers: %d'):format(#Config.DiscountTiers)
+print(string.format('^2[space_economy]^7 Rewards system loaded - Tiers: %d', #Config.DiscountTiers))

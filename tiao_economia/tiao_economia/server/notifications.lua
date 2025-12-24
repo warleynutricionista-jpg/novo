@@ -277,4 +277,4 @@ end, false)
 exports('NotifyDebts', SE.Notifications.NotifyDebts)
 exports('NotifyInstallments', SE.Notifications.NotifyInstallments)
 
-print('^2[space_economy]^7 Notification system loaded - Interval: %d minutes'):format(Config.IntervalMinutes)
+print(string.format('^2[space_economy]^7 Notification system loaded - Interval: %d minutes', Config.IntervalMinutes))

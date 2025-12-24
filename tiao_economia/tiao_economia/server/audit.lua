@@ -254,4 +254,4 @@ exports('AuditLog', SE.Audit.Log)
 exports('AuditGetLogs', SE.Audit.GetLogs)
 exports('AuditGetStats', SE.Audit.GetStats)
 
-print('^2[space_economy]^7 Audit system loaded - Retention: %d days'):format(Config.RetentionDays)
+print(string.format('^2[space_economy]^7 Audit system loaded - Retention: %d days', Config.RetentionDays))
