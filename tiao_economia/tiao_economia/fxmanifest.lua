@@ -2,9 +2,9 @@ fx_version 'cerulean'
 game 'gta5'
 lua54 'yes'
 
-author 'space_economy (QBOX Advanced v3.0)'
-description 'Sistema econômico completo: impostos, dívidas, parcelamento, crédito, empréstimos, taxação automática'
-version '3.0.0'
+author 'space_economy (QBOX Advanced v3.1)'
+description 'Sistema econômico completo: impostos, dívidas, parcelamento, crédito, empréstimos, taxação automática + melhorias v3.1'
+version '3.1.0'
 
 -- ============================================================
 -- SHARED (Client + Server)
@@ -33,7 +33,7 @@ server_scripts {
   'server/tax.lua',
   'server/charcache.lua',
   'server/integrations.lua',
-  
+
   -- Sistemas Avançados (NOVOS)
   'server/debts.lua',           -- Melhorado
   'server/installments.lua',    -- NOVO: Parcelamento
@@ -42,6 +42,15 @@ server_scripts {
   'server/auto_tax.lua',        -- NOVO: Taxação automática
   'server/reports.lua',         -- NOVO: Relatórios e analytics
   'server/external_integrations.lua', -- NOVO: Integrações externas
+
+  -- Melhorias v3.1 (Performance & UX)
+  'server/cache.lua',           -- Sistema de cache com TTL
+  'server/notifications.lua',   -- Notificações push automáticas
+  'server/backup.lua',          -- Backup automático
+  'server/metrics.lua',         -- Dashboard de métricas
+  'server/audit.lua',           -- Sistema de auditoria
+  'server/rewards.lua',         -- Sistema de recompensas
+  'server/discord.lua',         -- Discord webhooks
 
   -- Admin & Events
   'server/admin.lua',
@@ -132,4 +141,59 @@ exports {
 exports {
   'GetEconomyReport',
   'GetDailyMetrics',
+}
+
+-- Cache (v3.1)
+exports {
+  'CacheGet',
+  'CacheSet',
+  'CacheInvalidate',
+  'CacheGetOrSet',
+  'CacheGetStats',
+}
+
+-- Notifications (v3.1)
+exports {
+  'NotifyDebts',
+  'NotifyInstallments',
+}
+
+-- Backup (v3.1)
+exports {
+  'CreateBackup',
+  'RestoreBackup',
+  'ListBackups',
+}
+
+-- Metrics (v3.1)
+exports {
+  'GetDashboardData',
+  'GetWeeklyRevenue',
+  'GetTopDebtors',
+}
+
+-- Audit (v3.1)
+exports {
+  'AuditLog',
+  'AuditGetLogs',
+  'AuditGetStats',
+}
+
+-- Rewards (v3.1)
+exports {
+  'RecordPayment',
+  'GetDiscount',
+  'ApplyDiscount',
+  'GetPlayerRewardInfo',
+  'GetTopPayers',
+}
+
+-- Discord (v3.1)
+exports {
+  'SendDiscordEmbed',
+  'DiscordTreasuryTransaction',
+  'DiscordDebtCreated',
+  'DiscordDebtPaid',
+  'DiscordAdminAction',
+  'DiscordAlert',
 }
