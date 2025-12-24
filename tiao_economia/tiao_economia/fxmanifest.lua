@@ -41,7 +41,8 @@ server_scripts {
   'server/loans.lua',           -- NOVO: Empréstimos
   'server/auto_tax.lua',        -- NOVO: Taxação automática
   'server/reports.lua',         -- NOVO: Relatórios e analytics
-  
+  'server/external_integrations.lua', -- NOVO: Integrações externas
+
   -- Admin & Events
   'server/admin.lua',
   'server/events.lua',
