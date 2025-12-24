@@ -1,43 +1,45 @@
 --============================================================
 -- space_economy - client/nui.lua
--- Ponte Client <-> NUI (versão com sanitização e uso do helper de focus)
+-- Ponte Client <-> NUI (fetch callbacks do HTML)
+-- Protocolo ÚNICO: SendNUIMessage({ action="open", mode, payload })
 --============================================================
+
 SE = SE or {}
 SE.Client = SE.Client or {}
-local C = SE.Client
 
 local uiOpen = false
 local uiAck = false
+
+-- usado quando abrimos modo "payment" (opcional)
 local lastPayment = { tax = 0, reason = 'Imposto' }
 
 local function setFocus(state)
-  if C and type(C.SetNuiFocusSafe) == 'function' then
-    C.SetNuiFocusSafe(state, false)
-    return
-  end
-  -- fallback
   SetNuiFocus(state, state)
-  if SetNuiFocusKeepInput then SetNuiFocusKeepInput(false) end
+  SetNuiFocusKeepInput(false)
 end
 
 local function openUI(mode, payload)
   uiOpen = true
   uiAck = false
+
   payload = payload or {}
 
+  -- guarda pagamento (se vier)
   if mode == 'payment' then
-    lastPayment.tax = tonumber(payload.tax or lastPayment.tax) or 0
-    lastPayment.reason = tostring(payload.reason or lastPayment.reason or 'Imposto')
+    lastPayment.tax = tonumber(payload.tax or 0) or 0
+    lastPayment.reason = tostring(payload.reason or 'Imposto')
   end
 
   setFocus(true)
 
+  -- Protocolo único (compat com html/script.js novo)
   SendNUIMessage({
     action = 'open',
     mode = tostring(mode or ''),
     payload = payload
   })
 
+  -- watchdog: se a NUI não responder, fecha
   CreateThread(function()
     Wait(2500)
     if uiOpen and not uiAck then
@@ -55,6 +57,9 @@ local function closeUI()
   SendNUIMessage({ action = 'close' })
 end
 
+--============================================================
+-- Eventos vindos do server
+--============================================================
 RegisterNetEvent('space_economy:client_open', function(mode, payload)
   openUI(mode, payload or {})
 end)
@@ -67,10 +72,12 @@ RegisterNetEvent('space_economy:client_notify', function(msg, typ)
       type = typ or 'inform'
     })
   else
+    -- fallback simples
     print(('[space_economy] %s'):format(msg or '...'))
   end
 end)
 
+-- server -> NUI (roteador único)
 RegisterNetEvent('space_economy:client_adminData', function(key, data)
   SendNUIMessage({
     action = 'adminData',
@@ -79,68 +86,67 @@ RegisterNetEvent('space_economy:client_adminData', function(key, data)
   })
 end)
 
--- NUI callbacks com sanitização
+--============================================================
+-- NUI callbacks (fetch -> client)
+--============================================================
+
+-- handshake / ACK (script.js chama post("ready"))
 RegisterNUICallback('ready', function(_, cb)
   uiAck = true
   cb({ ok = true })
 end)
 
+-- compat extra (se você usar ACK por token em algum momento)
 RegisterNUICallback('nui_ack', function(_, cb)
   uiAck = true
   cb({ ok = true })
 end)
 
+-- fechar forçado (script.js chama post("forceClose"))
 RegisterNUICallback('forceClose', function(_, cb)
   closeUI()
   cb({ ok = true })
 end)
 
+-- fechar normal
 RegisterNUICallback('close', function(_, cb)
   closeUI()
   cb({ ok = true })
 end)
 
+-- admin router (script.js chama post("admin_requestData"))
 RegisterNUICallback('admin_requestData', function(data, cb)
-  local dataType = data and tostring(data.dataType or '')
-  local payload = data and data.payload or {}
-  pcall(function()
-    TriggerServerEvent('space_economy:server_requestAdminData', dataType, payload)
-  end)
+  local dataType = data and data.dataType
+  local payload = data and data.payload
+  TriggerServerEvent('space_economy:server_requestAdminData', dataType, payload)
   cb({ ok = true })
 end)
 
+-- pagamento UI (script.js chama post("payTax"))
 RegisterNUICallback('payTax', function(data, cb)
-  local tax = tonumber((data and data.tax) or lastPayment.tax) or 0
+  local tax = tonumber((data and data.tax) or lastPayment.tax or 0) or 0
   local reason = tostring((data and data.reason) or lastPayment.reason or 'Imposto')
-  pcall(function()
-    TriggerServerEvent('space_economy:server_payTax', tax, reason)
-  end)
+  TriggerServerEvent('space_economy:server_payTax', tax, reason)
   cb({ ok = true })
 end)
 
 RegisterNUICallback('refuseTax', function(data, cb)
-  local tax = tonumber(data and data.tax) or nil
-  local reason = data and tostring(data.reason) or nil
-  pcall(function()
-    TriggerServerEvent('space_economy:server_refuseTax', tax, reason)
-  end)
+  TriggerServerEvent('space_economy:server_refuseTax', data and data.tax, data and data.reason)
   cb({ ok = true })
 end)
 
+-- calculadora (script.js chama post("calculateTax"))
 RegisterNUICallback('calculateTax', function(data, cb)
-  local amount = tonumber(data and data.amount) or 0
-  pcall(function()
-    TriggerServerEvent('space_economy:server_calculateTax', amount)
-  end)
+  TriggerServerEvent('space_economy:server_calculateTax', data and data.amount)
   cb({ ok = true })
 end)
 
+-- lavagem (script.js chama post("washMoney"))
 RegisterNUICallback('washMoney', function(data, cb)
-  local businessId = data and data.businessId
-  local amount = tonumber(data and data.amount) or 0
-  local fee = tonumber(data and (data.fee_percent or data.feePercent)) or nil
-  pcall(function()
-    TriggerServerEvent('space_economy:server_washMoney', businessId, amount, fee)
-  end)
+  TriggerServerEvent('space_economy:server_washMoney',
+    data and data.businessId,
+    data and data.amount,
+    data and (data.fee_percent or data.feePercent)
+  )
   cb({ ok = true })
 end)

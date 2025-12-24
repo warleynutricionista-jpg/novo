@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Space Economy</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <main class="overlay" aria-hidden="true">
+
+    <!-- ================= ADMIN DASHBOARD ================= -->
+    <section class="card admin-shell" id="admin-dashboard-container">
+      <header class="card-header admin-header">
+        <div class="admin-title">
+          <h2 class="card-title">Painel Econômico</h2>
+          <p class="card-subtitle">Gestão Governamental</p>
+          <span id="admin-unsaved-tag" class="inline-status warn" style="display:none;">Não Salvo</span>
+        </div>
+        <div class="admin-header-actions">
+          <button class="button secondary" data-action="refreshAdmin" data-busy-control="1"><span class="icon">🔄</span></button>
+          <button data-close-button class="button secondary"><span class="icon">✖</span></button>
+        </div>
+      </header>
+
+      <div class="admin-body">
+        <aside class="admin-nav">
+          <button class="nav-item is-active" data-nav="overview"><span class="icon">📊</span> <span>Geral</span></button>
+          <button class="nav-item" data-nav="controls"><span class="icon">⚙️</span> <span>Controles</span></button>
+          <button class="nav-item" data-nav="taxes"><span class="icon">🧾</span> <span>Tributos</span></button>
+          <button class="nav-item" data-nav="actions"><span class="icon">⚡</span> <span>Ações</span></button>
+          <button class="nav-item" data-nav="logs"><span class="icon">📝</span> <span>Logs</span></button>
+        </aside>
+
+        <section class="admin-content">
+          <!-- OVERVIEW -->
+          <div class="view is-active" data-view="overview">
+            <div class="metrics-grid">
+              <div class="metric"><div class="metric-lbl">Cofre</div><div class="metric-val" id="metric-vault">$0</div></div>
+              <div class="metric"><div class="metric-lbl">Inflação</div><div class="metric-val" id="metric-inflation">1.00</div></div>
+              <div class="metric"><div class="metric-lbl">Taxa</div><div class="metric-val" id="metric-taxrate">0%</div></div>
+              <div class="metric"><div class="metric-lbl">Hoje</div><div class="metric-val" id="metric-today">$0</div></div>
+            </div>
+          </div>
+
+          <!-- CONTROLS -->
+          <div class="view" data-view="controls">
+            <div class="panel">
+              <div class="control-grid">
+                <div class="control">
+                  <div class="field-label">Inflação</div>
+                  <div class="segmented">
+                    <button class="seg is-active" data-mode="auto" data-setting="mode.inflation">Auto</button>
+                    <button class="seg" data-mode="manual" data-setting="mode.inflation">Manual</button>
+                  </div>
+                  <input
+                    type="number"
+                    id="manual-inflation"
+                    class="modern-input"
+                    placeholder="1.0"
+                    data-setting="manual.inflation"
+                    disabled
+                  >
+                </div>
+
+                <div class="control">
+                  <div class="field-label">Taxa (%)</div>
+                  <div class="segmented">
+                    <button class="seg is-active" data-mode="auto" data-setting="mode.taxrate">Auto</button>
+                    <button class="seg" data-mode="manual" data-setting="mode.taxrate">Manual</button>
+                  </div>
+                  <input
+                    type="number"
+                    id="manual-taxrate"
+                    class="modern-input"
+                    placeholder="100"
+                    data-setting="manual.taxrate"
+                    disabled
+                  >
+                </div>
+              </div>
+
+              <div class="panel-actions">
+                <button class="button primary" data-action="saveAdminSettings" data-busy-control="1" disabled>Salvar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAXES -->
+          <div class="view" data-view="taxes">
+            <div class="panel">
+              <div class="tax-quick-grid">
+                <div class="chip" data-tax="IPTU">IPTU</div>
+                <div class="chip" data-tax="IPVA">IPVA</div>
+                <div class="chip" data-tax="IRPF">IRPF</div>
+                <div class="chip" data-tax="ADMIN_FINE">Multa</div>
+              </div>
+
+              <div class="form-grid">
+                <div class="field">
+                  <span class="field-label">Alvo</span>
+                  <select id="issue-target-mode" class="modern-select">
+                    <option value="citizenid">Cidadão</option>
+                    <option value="all_online">Todos Online</option>
+                  </select>
+                </div>
+
+                <div class="field" id="issue-citizenid-wrap">
+                  <span class="field-label">CitizenID</span>
+                  <input type="text" id="issue-citizenid" class="modern-input" placeholder="CitizenID">
+                </div>
+
+                <div class="field">
+                  <span class="field-label">Tipo</span>
+                  <select id="issue-tax-type" class="modern-select"></select>
+                </div>
+
+                <div class="field">
+                  <span class="field-label">Base</span>
+                  <input type="number" id="issue-base" class="modern-input" placeholder="Valor base (bem/serviço)">
+                </div>
+
+                <div class="field">
+                  <span class="field-label">Valor</span>
+                  <input type="number" id="issue-amount" class="modern-input" placeholder="Valor final">
+                </div>
+
+                <div class="field" style="grid-column: 1 / -1;">
+                  <span class="field-label">Motivo</span>
+                  <input type="text" id="issue-reason" class="modern-input" placeholder="Descrição do lançamento">
+                </div>
+              </div>
+
+              <div class="panel-actions">
+                <button class="button secondary" data-action="issueCalc">Simular</button>
+                <button class="button primary" data-action="issueSubmit" data-busy-control="1">Lançar</button>
+              </div>
+
+              <div class="info-item" style="margin-top:10px;"><span id="issue-preview">—</span></div>
+              <div id="issue-status" class="inline-status" style="display:none;"></div>
+            </div>
+          </div>
+
+          <!-- ACTIONS -->
+          <div class="view" data-view="actions">
+            <div class="dashboard-grid">
+              <button class="dashboard-button" data-action="viewVault">Saldo Cofre</button>
+              <button class="dashboard-button" data-action="addVault">Depositar</button>
+              <button class="dashboard-button" data-action="withdrawVault">Sacar</button>
+              <button class="dashboard-button" data-action="viewDebts">Listar Dívidas</button>
+              <button class="dashboard-button" data-action="viewSpecificDebt">Buscar Dívida</button>
+              <button class="dashboard-button" data-action="collectDebt">Cobrar</button>
+            </div>
+          </div>
+
+          <!-- LOGS -->
+          <div class="view" data-view="logs">
+            <div class="table-container">
+              <table id="admin-logs-table">
+                <thead><tr><th>Data</th><th>Cat</th><th>Msg</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="panel-actions">
+              <button class="button secondary" data-action="fetchLogs">Atualizar</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ================= PLAYER PAYMENT ================= -->
+    <section class="card" id="payment-container">
+      <header class="card-header"><h2 class="card-title">Pagamento</h2></header>
+      <div class="card-content">
+        <div class="info-item"><span class="info-label">Valor</span> <span id="tax-value" class="money">$0</span></div>
+        <div class="info-item"><span class="info-label">Motivo</span> <span id="tax-reason" class="info-value">—</span></div>
+      </div>
+      <footer class="card-actions">
+        <button id="pay" class="button primary" data-busy-control="1">Pagar</button>
+        <button id="refuse" class="button secondary" data-busy-control="1">Recusar</button>
+      </footer>
+    </section>
+
+    <!-- ================= DEBT PROMPT ================= -->
+    <section class="card" id="debt-collect-prompt-container">
+      <header class="card-header"><h2 class="card-title">Cobrança</h2></header>
+      <div class="card-content">
+        <div class="warning">Pendências vencidas.</div>
+        <div class="debt-value" id="debt-prompt-amount" style="text-align:center;">$0</div>
+      </div>
+      <footer class="card-actions">
+        <button id="debt-prompt-pay" class="button primary">Quitar</button>
+        <button id="debt-prompt-installment" class="button primary">Parcelar</button>
+        <button id="debt-prompt-refuse" class="button secondary">Ignorar</button>
+      </footer>
+    </section>
+
+    <!-- ================= GENERIC INPUT ================= -->
+    <section class="card" id="debt-input-container">
+      <header class="card-header"><h2 class="card-title" id="debt-input-title">Buscar</h2></header>
+      <div class="card-content">
+        <input type="text" id="debt-citizenid-input" class="modern-input" placeholder="CitizenID" data-autofocus>
+      </div>
+      <footer class="card-actions">
+        <button id="debt-input-confirm" class="button primary">OK</button>
+        <button data-close-button class="button secondary">X</button>
+      </footer>
+    </section>
+
+    <!-- ================= VAULT MODALS ================= -->
+    <section class="card" id="vault-add-container">
+      <header class="card-header"><h2 class="card-title">Depositar</h2></header>
+      <div class="card-content">
+        <input type="number" id="add-amount-input" class="modern-input" placeholder="Valor" data-autofocus>
+      </div>
+      <footer class="card-actions">
+        <button id="add-vault-confirm" class="button primary">OK</button>
+        <button data-close-button class="button secondary">X</button>
+      </footer>
+    </section>
+
+    <section class="card" id="vault-withdraw-container">
+      <header class="card-header"><h2 class="card-title">Sacar</h2></header>
+      <div class="card-content">
+        <input type="number" id="withdraw-amount-input" class="modern-input" placeholder="Valor" data-autofocus>
+      </div>
+      <footer class="card-actions">
+        <button id="withdraw-vault-confirm" class="button primary">OK</button>
+        <button data-close-button class="button secondary">X</button>
+      </footer>
+    </section>
+
+    <section class="card" id="vault-view-container">
+      <header class="card-header"><h2 class="card-title">Saldo</h2></header>
+      <div class="card-content" style="text-align:center;">
+        <div class="money" id="vault-balance-value">$0</div>
+      </div>
+      <footer class="card-actions"><button data-close-button class="button secondary">Fechar</button></footer>
+    </section>
+
+    <!-- ================= DEBT LIST/DETAIL ================= -->
+    <section class="card" id="debt-list-container">
+      <header class="card-header"><h2 class="card-title">Devedores</h2></header>
+      <div class="card-content table-container" style="max-height:400px;">
+        <table id="debt-table">
+          <thead><tr><th>Nome</th><th>ID</th><th>$</th><th>Motivo</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <footer class="card-actions"><button data-close-button class="button secondary">Fechar</button></footer>
+    </section>
+
+    <section class="card" id="debt-detail-container">
+      <header class="card-header"><h2 class="card-title">Detalhe</h2></header>
+      <div class="card-content">
+        <div class="info-item"><span class="info-label">Nome:</span> <span id="debt-detail-name"></span></div>
+        <div class="info-item"><span class="info-label">CitizenID:</span> <span id="debt-detail-citizenid"></span></div>
+        <div class="info-item"><span class="info-label">Valor:</span> <span id="debt-detail-amount"></span></div>
+        <div class="info-item"><span class="info-label">Motivo:</span> <span id="debt-detail-reason"></span></div>
+      </div>
+      <footer class="card-actions"><button data-close-button class="button secondary">Fechar</button></footer>
+    </section>
+
+    <!-- ================= LAUNDERING / CALC ================= -->
+    <section class="card" id="laundering-container">
+      <header class="card-header"><h2 class="card-title">Lavagem</h2></header>
+      <div class="card-content">
+        <input type="number" id="laundering-amount" class="modern-input" placeholder="Quantidade" data-autofocus>
+        <input type="number" id="laundering-fee-percent" class="modern-input" placeholder="Taxa %" style="margin-top:5px;">
+      </div>
+      <footer class="card-actions">
+        <button id="laundering-confirm" class="button primary" data-busy-control="1">Lavar</button>
+        <button data-close-button class="button secondary">X</button>
+      </footer>
+    </section>
+
+    <section class="card" id="calculator-container">
+      <header class="card-header"><h2 class="card-title">Calculadora</h2></header>
+      <div class="card-content">
+        <input type="number" id="calculator-input" class="modern-input" placeholder="Valor" data-autofocus>
+      </div>
+      <footer class="card-actions">
+        <button id="calculator-confirm" class="button primary">Calc</button>
+        <button data-close-button class="button secondary">X</button>
+      </footer>
+    </section>
+
+    <section class="card success-card" id="success-container">
+      <div class="card-content" style="text-align:center;">
+        <div style="font-size:40px; color:#4ade80;">✅</div>
+        <p id="success-message" style="margin:10px 0;">Sucesso</p>
+        <button data-close-button class="button secondary" style="width:100%;">Fechar</button>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="script.js" defer></script>
+</body>
+</html>

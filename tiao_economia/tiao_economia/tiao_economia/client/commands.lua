@@ -44,8 +44,8 @@ end, false)
 
 -- Keymapping (evite F8 porque conflita com console do FiveM)
 RegisterKeyMapping('taxas', 'Economia: abrir painel de impostos', 'keyboard', 'F7')
-RegisterKeyMapping('economia', 'Economia: abrir painel administrativo', 'keyboard', 'F12')
-RegisterKeyMapping('eco_testui', 'Economia: TESTE abrir NUI admin local', 'keyboard', '5')
+RegisterKeyMapping('economia', 'Economia: abrir painel administrativo', 'keyboard', 'F9')
+RegisterKeyMapping('eco_testui', 'Economia: TESTE abrir NUI admin local', 'keyboard', 'F10')
 
 CreateThread(function()
   Wait(1000)

@@ -1,6 +1,6 @@
 --============================================================
 -- space_economy - server/init.lua
--- Bootstrap do servidor (namespace + defaults + guards) - versão corrigida
+-- Bootstrap do servidor (namespace + defaults + guards)
 --============================================================
 SE = SE or {}
 
@@ -19,14 +19,14 @@ SE.Metrics = SE.Metrics or {}
 SE.Resource = GetCurrentResourceName()
 SE.Version = (GetResourceMetadata(SE.Resource, 'version', 0) or '0.0.0')
 
--- Utility reference (pode ser nil, usamos guardas)
+-- Guards de runtime
 local U = SE.Util
 
 -- Defaults mínimos (não duplicar lógica do state.lua; só garante existência)
 SE.State.dirty = SE.State.dirty == true
-SE.State.vaultBalance = (U and U.toInt and U.toInt(SE.State.vaultBalance, 0)) or (SE.State.vaultBalance or 0)
-SE.State.inflationRate = (U and U.toNumber and U.toNumber(SE.State.inflationRate, 1.0)) or (SE.State.inflationRate or 1.0)
-SE.State.taxMultiplier = (U and U.toNumber and U.toNumber(SE.State.taxMultiplier, 1.0)) or (SE.State.taxMultiplier or 1.0)
+SE.State.vaultBalance = U and U.toInt and U.toInt(SE.State.vaultBalance, 0) or (SE.State.vaultBalance or 0)
+SE.State.inflationRate = U and U.toNumber and U.toNumber(SE.State.inflationRate, 1.0) or (SE.State.inflationRate or 1.0)
+SE.State.taxMultiplier = U and U.toNumber and U.toNumber(SE.State.taxMultiplier, 1.0) or (SE.State.taxMultiplier or 1.0)
 SE.State.settings = type(SE.State.settings) == 'table' and SE.State.settings or {}
 
 -- Ready flag (útil pra integrações que esperam load state)
@@ -50,19 +50,11 @@ end
 
 -- Marcar ready assim que o state.lua carregar (state.lua chama LoadState no thread)
 CreateThread(function()
-  -- aguarda MySQL existir (timeout) - espera por até 15s
+  -- aguarda MySQL e o carregamento inicial do state.lua
   local waited = 0
-  local timeout = 15000
-  while not MySQL do
-    Wait(200)
-    waited = waited + 200
-    if waited > timeout then
-      SE.Server.BootLog('Aviso: MySQL não disponível após '..tostring(timeout/1000)..'s, prosseguindo (algumas funções podem falhar).')
-      break
-    end
-  end
+  while not MySQL do Wait(200) waited += 200 if waited > 15000 then break end end
 
-  -- pequena espera para o state carregar (state.lua deverá definir e limpar dirty)
+  -- aguarda state load (state.lua define valores e limpa dirty)
   Wait(500)
 
   SE.Server.SetReady(true)
