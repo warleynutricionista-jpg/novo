@@ -227,42 +227,42 @@ Config.UI = {
 }
 
 -- ============================================================
--- INTEGRAÇÕES
+-- INTEGRAÇÕES (CORRIGIDO - 24/12/2025)
 -- ============================================================
 Config.Integrations = {
   -- Banking
   Banking = {
     Enabled = true,
-    Resource = 'auto', -- auto-detect ou 'ps-banking', 'qb-banking'
+    Resource = 'auto', -- auto-detect: qbx_core, qb-core, ps-banking
   },
-  
-  -- Dispatch
+
+  -- Dispatch (DESABILITADO até instalar ps-dispatch)
   Dispatch = {
-    Enabled = true,
+    Enabled = false,  -- ← ALTERADO: true → false
     Resource = 'ps-dispatch',
   },
-  
-  -- MDT
+
+  -- MDT (DESABILITADO até instalar ps-mdt)
   MDT = {
-    Enabled = true,
+    Enabled = false,  -- ← ALTERADO: true → false
     Resource = 'ps-mdt',
   },
-  
-  -- Shops (futuro: taxar compras)
+
+  -- Shops (DESABILITADO - não integrado)
   Shops = {
     Enabled = false,
     TaxPurchases = false,
     TaxRate = 1.0,
   },
-  
-  -- Real Estate (futuro: IPTU automático)
+
+  -- Real Estate (DESABILITADO - não integrado)
   RealEstate = {
     Enabled = false,
     AutoIPTU = false,
     IPTUFrequencyDays = 30,
   },
-  
-  -- Garages (futuro: IPVA automático)
+
+  -- Garages (DESABILITADO - não integrado)
   Garages = {
     Enabled = false,
     AutoIPVA = false,
