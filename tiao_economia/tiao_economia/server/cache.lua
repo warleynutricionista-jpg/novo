@@ -294,7 +294,7 @@ exports('CacheInvalidate', SE.Cache.Invalidate)
 exports('CacheGetOrSet', SE.Cache.GetOrSet)
 exports('CacheGetStats', SE.Cache.GetStats)
 
-print('^2[space_economy]^7 Cache system loaded - TTL: %ds | Auto-clean: %dms'):format(
+print(string.format('^2[space_economy]^7 Cache system loaded - TTL: %ds | Auto-clean: %dms',
     Config.DefaultTTL,
     Config.AutoCleanInterval
-)
+))

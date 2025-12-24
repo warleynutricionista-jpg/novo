@@ -256,4 +256,4 @@ exports('GetDashboardData', SE.Metrics.GetDashboardData)
 exports('GetWeeklyRevenue', SE.Metrics.GetWeeklyRevenue)
 exports('GetTopDebtors', SE.Metrics.GetTopDebtors)
 
-print('^2[space_economy]^7 Metrics system loaded - Cache TTL: %ds'):format(MetricsCache.cacheTTL)
+print(string.format('^2[space_economy]^7 Metrics system loaded - Cache TTL: %ds', MetricsCache.cacheTTL))
