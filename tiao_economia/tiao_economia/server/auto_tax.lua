@@ -350,7 +350,7 @@ exports('TaxShopPurchase', hookShopPurchase)
 -- COMANDOS ADMIN
 --============================================================
 RegisterCommand('eco_tax_vehicle', function(source, args)
-  if not SE.Admin.IsAllowed(source) then return end
+  if not (SE.Admin and SE.Admin.IsAllowed and SE.Admin.IsAllowed(source)) then return end
   
   local targetId = tonumber(args[1])
   local price = tonumber(args[2]) or 50000
@@ -374,7 +374,7 @@ RegisterCommand('eco_tax_vehicle', function(source, args)
 end, false)
 
 RegisterCommand('eco_tax_property', function(source, args)
-  if not SE.Admin.IsAllowed(source) then return end
+  if not (SE.Admin and SE.Admin.IsAllowed and SE.Admin.IsAllowed(source)) then return end
   
   local targetId = tonumber(args[1])
   local price = tonumber(args[2]) or 100000
