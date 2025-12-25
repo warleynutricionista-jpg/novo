@@ -139,7 +139,21 @@ function B.HasAce(src, ace)
   if not src or src == 0 then return true end -- console
   ace = tostring(ace or '')
   if ace == '' then return false end
-  return IsPlayerAceAllowed(src, ace) == true
+
+  -- Debug: verificar identifier do jogador
+  local identifiers = GetPlayerIdentifiers(src)
+  print(('[space_economy] Checking ACE "%s" for source %d'):format(ace, src))
+  if identifiers and #identifiers > 0 then
+    print(('[space_economy] Player identifiers:'):format())
+    for _, id in ipairs(identifiers) do
+      print(('  - %s'):format(id))
+    end
+  end
+
+  local hasAce = IsPlayerAceAllowed(src, ace) == true
+  print(('[space_economy] IsPlayerAceAllowed(%d, "%s") = %s'):format(src, ace, tostring(hasAce)))
+
+  return hasAce
 end
 
 function B.IsStaffMeta(src)
@@ -173,21 +187,42 @@ function B.CanAdmin(src)
 
   local perm = Config and Config.Permissions or {}
 
+  -- Debug logging
+  local debugMsg = ('[space_economy] Verificando permissões admin para source %d'):format(src)
+  print(debugMsg)
+
   -- 1) ACE
-  if perm.Ace and B.HasAce(src, perm.Ace) then
-    return true
+  if perm.Ace then
+    local hasAce = B.HasAce(src, perm.Ace)
+    print(('[space_economy] ACE check: %s = %s'):format(perm.Ace, tostring(hasAce)))
+    if hasAce then
+      print(('[space_economy] Source %d TEM permissão via ACE'):format(src))
+      return true
+    end
+  else
+    print('[space_economy] Config.Permissions.Ace não configurado')
   end
 
   -- 2) Staff meta
-  if perm.AllowStaffMeta and B.IsStaffMeta(src) then
-    return true
+  if perm.AllowStaffMeta then
+    local isStaff = B.IsStaffMeta(src)
+    print(('[space_economy] Staff Meta check: %s'):format(tostring(isStaff)))
+    if isStaff then
+      print(('[space_economy] Source %d TEM permissão via Staff Meta'):format(src))
+      return true
+    end
   end
 
   -- 3) Job + grade
   if perm.Jobs and type(perm.Jobs) == 'table' then
     for jobName, rule in pairs(perm.Jobs) do
-      if type(rule) == 'table' and B.HasJobGrade(src, jobName, rule.minGrade or 0) then
-        return true
+      if type(rule) == 'table' then
+        local hasJobGrade = B.HasJobGrade(src, jobName, rule.minGrade or 0)
+        print(('[space_economy] Job check: %s (minGrade %d) = %s'):format(jobName, rule.minGrade or 0, tostring(hasJobGrade)))
+        if hasJobGrade then
+          print(('[space_economy] Source %d TEM permissão via Job %s'):format(src, jobName))
+          return true
+        end
       end
     end
   end
@@ -195,11 +230,16 @@ function B.CanAdmin(src)
   -- 4) QBCore legacy permission group (se existir)
   local core = GetQBCore()
   if core and core.Functions and core.Functions.HasPermission then
-    if core.Functions.HasPermission(src, 'admin') or core.Functions.HasPermission(src, 'god') then
+    local hasAdmin = core.Functions.HasPermission(src, 'admin')
+    local hasGod = core.Functions.HasPermission(src, 'god')
+    print(('[space_economy] QBCore permission check: admin=%s, god=%s'):format(tostring(hasAdmin), tostring(hasGod)))
+    if hasAdmin or hasGod then
+      print(('[space_economy] Source %d TEM permissão via QBCore legacy'):format(src))
       return true
     end
   end
 
+  print(('[space_economy] Source %d NÃO TEM permissão admin'):format(src))
   return false
 end
 

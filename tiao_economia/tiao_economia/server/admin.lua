@@ -49,6 +49,119 @@ function SE.Admin.IsAllowed(src)
 end
 
 --============================================================
+-- Debug: Comando para verificar permissões
+--============================================================
+RegisterCommand('eco_checkperm', function(src, args)
+  print('\n========================================')
+  print('[space_economy] DIAGNÓSTICO DE PERMISSÕES')
+  print('========================================')
+  print(('Source: %d'):format(src))
+
+  -- Identifiers
+  local identifiers = GetPlayerIdentifiers(src)
+  if identifiers then
+    print('\nIdentifiers:')
+    for _, id in ipairs(identifiers) do
+      print(('  - %s'):format(id))
+    end
+  end
+
+  -- Config check
+  print('\nConfig:')
+  if Config and Config.Permissions then
+    print(('  Ace: %s'):format(Config.Permissions.Ace or 'NÃO CONFIGURADO'))
+    print(('  AllowStaffMeta: %s'):format(tostring(Config.Permissions.AllowStaffMeta)))
+    if Config.Permissions.Jobs then
+      print('  Jobs configurados:')
+      for job, rule in pairs(Config.Permissions.Jobs) do
+        print(('    - %s (minGrade: %d)'):format(job, rule.minGrade or 0))
+      end
+    end
+  else
+    print('  ERROR: Config.Permissions não existe!')
+  end
+
+  -- Player data
+  local pd = U.GetPlayerDataSafe(src)
+  if pd then
+    print('\nPlayer Data:')
+    print(('  CitizenID: %s'):format(pd.citizenid or 'N/A'))
+    print(('  Nome: %s'):format((pd.charinfo and (pd.charinfo.firstname .. ' ' .. pd.charinfo.lastname)) or 'N/A'))
+    if pd.job then
+      print(('  Job: %s'):format(pd.job.name or 'N/A'))
+      local grade = 0
+      if type(pd.job.grade) == 'table' then
+        grade = pd.job.grade.level or pd.job.grade.grade or 0
+      else
+        grade = pd.job.grade or 0
+      end
+      print(('  Grade: %d'):format(grade))
+    end
+    if pd.metadata then
+      print(('  IsStaff (metadata): %s'):format(tostring(pd.metadata.isstaff)))
+    end
+  else
+    print('\nERROR: Player data não encontrado!')
+  end
+
+  -- ACE check
+  if Config and Config.Permissions and Config.Permissions.Ace then
+    local ace = Config.Permissions.Ace
+    local hasAce = IsPlayerAceAllowed(src, ace)
+    print('\nACE Check:')
+    print(('  Verificando: %s'):format(ace))
+    print(('  Resultado: %s'):format(tostring(hasAce)))
+  end
+
+  -- Final result
+  local allowed = SE.Admin.IsAllowed(src)
+  print('\nRESULTADO FINAL:')
+  print(('  Permissão: %s'):format(allowed and 'PERMITIDO ✓' or 'NEGADO ✗'))
+  print('========================================\n')
+
+  -- Notifica o jogador
+  if B and B.Notify then
+    B.Notify(src, allowed and 'Você TEM permissão admin' or 'Você NÃO TEM permissão admin', allowed and 'success' or 'error')
+  end
+end, false)
+
+RegisterCommand('eco_grantme', function(src, args)
+  if src == 0 then
+    print('[space_economy] Use este comando in-game, não no console.')
+    return
+  end
+
+  print(('\n[space_economy] COMANDO DE EMERGÊNCIA: Concedendo permissão temporária para source %d'):format(src))
+
+  -- Verifica se já tem permissão
+  if SE.Admin.IsAllowed(src) then
+    if B and B.Notify then
+      B.Notify(src, 'Você já tem permissão admin!', 'inform')
+    end
+    print('[space_economy] Jogador já tem permissão.')
+    return
+  end
+
+  local identifiers = GetPlayerIdentifiers(src)
+  if identifiers and #identifiers > 0 then
+    print('[space_economy] Para conceder permissão permanente, adicione uma destas linhas no seu permissions.cfg ou server.cfg:')
+    print('')
+    for _, id in ipairs(identifiers) do
+      print(('add_principal identifier.%s group.admin'):format(id))
+    end
+    print('add_ace group.admin space_economy.admin allow')
+    print('')
+    print('Depois execute: refresh')
+    print('Depois execute: restart tiao_economia')
+    print('')
+  end
+
+  if B and B.Notify then
+    B.Notify(src, 'Verifique o console do servidor (F8) para instruções de permissão permanente', 'inform')
+  end
+end, false)
+
+--============================================================
 -- Helpers (settings)
 --============================================================
 local function deepMerge(dst, src)
