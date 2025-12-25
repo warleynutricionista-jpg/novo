@@ -396,7 +396,9 @@ function DBInt.ProcessPropertyPurchases()
     DBInt.Debug(('Encontradas %d propriedades para IPTU'):format(#properties))
 
     for _, prop in ipairs(properties) do
-        local transactionId = 'iptu_' .. (prop.address or prop.label)
+        -- Proteção contra valores nil
+        local propertyId = tostring(prop.address or prop.label or prop.citizenid or 'unknown')
+        local transactionId = 'iptu_' .. propertyId
 
         -- Verificar se já cobrou IPTU este mês
         if not DBInt.IsProcessed(systemName, transactionId) then
@@ -405,7 +407,8 @@ function DBInt.ProcessPropertyPurchases()
             local taxAmount = math.floor(prop.price * (taxRate / 100))
 
             if taxAmount > 0 then
-                local reason = ('IPTU - Propriedade %s'):format(prop.address or prop.label)
+                local propertyLabel = tostring(prop.address or prop.label or 'Propriedade')
+                local reason = ('IPTU - %s'):format(propertyLabel)
 
                 local metadata = {
                     property_address = prop.address,

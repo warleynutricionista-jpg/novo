@@ -131,12 +131,16 @@ end)
 RegisterNetEvent('space_economy:server_openAdminPanel', function()
   local src = source
 
+  print(('[space_economy] server_openAdminPanel: source %d tentando abrir painel'):format(src))
+
   if not AdminAllowed(src) then
+    print(('[space_economy] server_openAdminPanel: ACESSO NEGADO para source %d'):format(src))
     SE.Log('admin', 'Acesso negado (permissão)', { src = src })
     Notify(src, 'Acesso negado.', 'error')
     return
   end
 
+  print(('[space_economy] server_openAdminPanel: ACESSO PERMITIDO para source %d'):format(src))
   local st = (SE.Admin and SE.Admin.GetStatePayload and SE.Admin.GetStatePayload()) or {}
   TriggerClientEvent('space_economy:client_open', src, 'admin', st)
 end)
@@ -146,14 +150,19 @@ end)
 --============================================================
 RegisterNetEvent('space_economy:server_requestAdminData', function(dataType, payload, forcedSrc)
   local src = forcedSrc or source
+  dataType = tostring(dataType or '')
+
+  print(('[space_economy] server_requestAdminData: source %d, dataType=%s'):format(src, dataType))
+
   if not AdminAllowed(src) then
+    print(('[space_economy] server_requestAdminData: ACESSO NEGADO para source %d em operação %s'):format(src, dataType))
     Notify(src, 'Acesso negado.', 'error')
     -- Envia resposta mesmo em caso de erro para destravar UI
     SendAdminData(src, 'error', { message = 'Acesso negado' })
     return
   end
 
-  dataType = tostring(dataType or '')
+  print(('[space_economy] server_requestAdminData: ACESSO PERMITIDO para source %d em operação %s'):format(src, dataType))
 
   if dataType == 'admin_state' then
     local st = (SE.Admin and SE.Admin.GetStatePayload and SE.Admin.GetStatePayload()) or {}
