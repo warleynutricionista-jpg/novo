@@ -374,10 +374,9 @@ function DBInt.ProcessPropertyPurchases()
     local processed = 0
 
     -- ESTRUTURA REAL: properties (do tiao_properties)
-    -- Campos: id, address, label, type, owner_citizenid, price
+    -- Campos: address, label, type, owner_citizenid, price
     local properties = MySQL.query.await([[
         SELECT
-            id,
             owner_citizenid as citizenid,
             address,
             label,
@@ -397,7 +396,7 @@ function DBInt.ProcessPropertyPurchases()
     DBInt.Debug(('Encontradas %d propriedades para IPTU'):format(#properties))
 
     for _, prop in ipairs(properties) do
-        local transactionId = 'iptu_' .. prop.id
+        local transactionId = 'iptu_' .. (prop.address or prop.label)
 
         -- Verificar se já cobrou IPTU este mês
         if not DBInt.IsProcessed(systemName, transactionId) then
@@ -406,10 +405,10 @@ function DBInt.ProcessPropertyPurchases()
             local taxAmount = math.floor(prop.price * (taxRate / 100))
 
             if taxAmount > 0 then
-                local reason = ('IPTU - Propriedade %s'):format(prop.address or prop.label or prop.id)
+                local reason = ('IPTU - Propriedade %s'):format(prop.address or prop.label)
 
                 local metadata = {
-                    property_id = prop.id,
+                    property_address = prop.address,
                     address = prop.address,
                     label = prop.label,
                     price = prop.price,
