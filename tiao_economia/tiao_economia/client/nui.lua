@@ -39,13 +39,34 @@ local function openUI(mode, payload)
     payload = payload
   })
 
-  -- watchdog: se a NUI não responder, fecha
+  -- watchdog com retry: aguarda resposta da NUI antes de fechar
   CreateThread(function()
-    Wait(2500)
+    Wait(5000) -- aumentado de 2500 para 5000ms
+
     if uiOpen and not uiAck then
-      uiOpen = false
-      setFocus(false)
-      SendNUIMessage({ action = 'close' })
+      -- Retry uma vez antes de desistir
+      SendNUIMessage({
+        action = 'open',
+        mode = tostring(mode or ''),
+        payload = payload
+      })
+
+      Wait(3000) -- aguarda mais 3 segundos
+
+      if uiOpen and not uiAck then
+        -- Ainda sem resposta, fecha UI
+        uiOpen = false
+        setFocus(false)
+        SendNUIMessage({ action = 'close' })
+
+        if lib and lib.notify then
+          lib.notify({
+            title = 'Economia',
+            description = 'Erro ao abrir interface. Tente novamente.',
+            type = 'error'
+          })
+        end
+      end
     end
   end)
 end

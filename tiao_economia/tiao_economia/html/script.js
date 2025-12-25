@@ -88,13 +88,28 @@
   // ===========================
   // NUI COMMUNICATION
   // ===========================
-  const postNUI = (event, data = {}) => {
+  const postNUI = (event, data = {}, retries = 2) => {
     log('POST:', event, data);
     return fetch(`https://${RESOURCE_NAME}/${event}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8' },
       body: JSON.stringify(data),
-    }).catch((err) => error('POST failed:', event, err));
+    })
+    .then(resp => resp.json())
+    .catch((err) => {
+      error('POST failed:', event, err);
+      if (retries > 0) {
+        log(`Retrying ${event}... (${retries} attempts left)`);
+        return new Promise(resolve =>
+          setTimeout(() => resolve(postNUI(event, data, retries - 1)), 500)
+        );
+      }
+      // Notificar erro ao usuário
+      Notification.show('Erro de comunicação com o servidor. Tente novamente.', 'error');
+      UI.setBusy(false);
+      LoadingIndicator.hide();
+      throw err;
+    });
   };
 
   // ===========================
@@ -109,6 +124,124 @@
     busy: false,
     payment: { amount: 0, reason: '' },
     inputModal: { callback: null, type: 'text' },
+    pendingRequests: 0,
+  };
+
+  // ===========================
+  // LOADING INDICATOR
+  // ===========================
+  const LoadingIndicator = {
+    show(message = 'Processando...') {
+      State.pendingRequests++;
+      const indicator = $('#loading-overlay') || this.create();
+      const msgEl = indicator.querySelector('.loading-message');
+      if (msgEl) msgEl.textContent = message;
+      indicator.style.display = 'flex';
+    },
+
+    hide() {
+      State.pendingRequests = Math.max(0, State.pendingRequests - 1);
+      if (State.pendingRequests === 0) {
+        const indicator = $('#loading-overlay');
+        if (indicator) indicator.style.display = 'none';
+      }
+    },
+
+    create() {
+      const overlay = document.createElement('div');
+      overlay.id = 'loading-overlay';
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+      `;
+
+      overlay.innerHTML = `
+        <div style="background: #1e1e2e; padding: 2rem; border-radius: 12px; text-align: center; min-width: 300px;">
+          <div style="width: 48px; height: 48px; border: 4px solid #3b82f6; border-top-color: transparent; border-radius: 50%; margin: 0 auto 1rem; animation: spin 1s linear infinite;"></div>
+          <div class="loading-message" style="color: #fff; font-size: 1rem;">Processando...</div>
+        </div>
+      `;
+
+      document.body.appendChild(overlay);
+
+      // Add animation
+      if (!$('#loading-animation-style')) {
+        const style = document.createElement('style');
+        style.id = 'loading-animation-style';
+        style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+        document.head.appendChild(style);
+      }
+
+      return overlay;
+    },
+  };
+
+  // ===========================
+  // NOTIFICATION SYSTEM
+  // ===========================
+  const Notification = {
+    show(message, type = 'info', duration = 4000) {
+      const notification = this.create(message, type);
+      document.body.appendChild(notification);
+
+      requestAnimationFrame(() => {
+        notification.style.transform = 'translateX(0)';
+        notification.style.opacity = '1';
+      });
+
+      setTimeout(() => {
+        notification.style.transform = 'translateX(400px)';
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
+      }, duration);
+    },
+
+    create(message, type) {
+      const colors = {
+        success: { bg: '#10b981', icon: '✓' },
+        error: { bg: '#ef4444', icon: '✕' },
+        warning: { bg: '#f59e0b', icon: '⚠' },
+        info: { bg: '#3b82f6', icon: 'ℹ' },
+      };
+
+      const config = colors[type] || colors.info;
+
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${config.bg};
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        max-width: 400px;
+        z-index: 10001;
+        transform: translateX(400px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        font-size: 0.95rem;
+      `;
+
+      notification.innerHTML = `
+        <span style="font-size: 1.25rem; font-weight: bold;">${config.icon}</span>
+        <span>${message}</span>
+      `;
+
+      return notification;
+    },
   };
 
   // ===========================
@@ -159,7 +292,7 @@
       postNUI('forceClose');
     },
 
-    setBusy(busy, timeoutMs = 0) {
+    setBusy(busy) {
       State.busy = !!busy;
 
       $$('[data-action], .btn').forEach((btn) => {
@@ -167,10 +300,6 @@
         btn.style.opacity = State.busy ? '0.6' : '1';
         btn.style.pointerEvents = State.busy ? 'none' : 'auto';
       });
-
-      if (busy && timeoutMs > 0) {
-        setTimeout(() => this.setBusy(false), timeoutMs);
-      }
     },
 
     setDirty(dirty) {
@@ -338,44 +467,72 @@
       const reason = String($('#tax-reason')?.value || '').trim();
 
       // Validations
-      if (!amount || amount <= 0) return alert('Valor inválido');
-      if (targetMode === 'citizenid' && !citizenid) return alert('Informe o CitizenID');
-      if (!reason || reason.length < 3) return alert('Informe um motivo válido (mín. 3 caracteres)');
+      if (!amount || amount <= 0) {
+        Notification.show('Valor inválido', 'error');
+        return;
+      }
+      if (targetMode === 'citizenid' && !citizenid) {
+        Notification.show('Informe o CitizenID', 'error');
+        return;
+      }
+      if (!reason || reason.length < 3) {
+        Notification.show('Informe um motivo válido (mín. 3 caracteres)', 'error');
+        return;
+      }
 
-      UI.setBusy(true, 5000);
+      UI.setBusy(true);
+      LoadingIndicator.show('Lançando tributo...');
 
       postNUI('admin_requestData', {
         dataType: 'admin_issueTaxDebt',
         payload: { targetMode, citizenid, type, base, amount, reason },
-      });
-
-      // Clear form after submission
-      setTimeout(() => {
+      })
+      .then(() => {
+        // Clear form after successful submission
         ['#tax-base', '#tax-amount', '#tax-reason'].forEach((selector) => {
           const input = $(selector);
           if (input) input.value = '';
         });
         const preview = $('#tax-preview');
         if (preview) preview.classList.add('hidden');
-      }, 500);
+
+        Notification.show('Tributo lançado com sucesso!', 'success');
+      })
+      .catch(() => {
+        UI.setBusy(false);
+        LoadingIndicator.hide();
+      });
     },
 
     saveSettings() {
       if (!State.adminDraft || State.busy) return;
 
-      UI.setBusy(true, 3000);
+      UI.setBusy(true);
+      LoadingIndicator.show('Salvando configurações...');
+
       postNUI('admin_requestData', {
         dataType: 'admin_saveSettings',
         payload: State.adminDraft,
+      })
+      .then(() => {
+        UI.setDirty(false);
+        Notification.show('Configurações salvas com sucesso!', 'success');
+      })
+      .catch(() => {
+        UI.setBusy(false);
+        LoadingIndicator.hide();
       });
-
-      UI.setDirty(false);
     },
 
     requestData(dataType, payload = null) {
       if (State.busy) return;
-      UI.setBusy(true, 3000);
-      postNUI('admin_requestData', { dataType, payload });
+      UI.setBusy(true);
+      LoadingIndicator.show('Carregando dados...');
+      postNUI('admin_requestData', { dataType, payload })
+      .catch(() => {
+        UI.setBusy(false);
+        LoadingIndicator.hide();
+      });
     },
   };
 
@@ -485,13 +642,17 @@
       const input = $('#input-modal-field');
       const value = input?.value?.trim() || '';
 
-      if (!value) return alert('Preencha o campo');
+      if (!value) {
+        Notification.show('Preencha o campo', 'error');
+        return;
+      }
 
       if (State.inputModal.callback) {
         State.inputModal.callback(value);
       }
 
-      UI.close();
+      // Não fecha UI aqui - deixa a callback decidir quando fechar
+      // ou o loading indicator cuidar disso
     },
   };
 
@@ -540,13 +701,23 @@
     'quick-deposit'() {
       InputModal.show('Depositar no Tesouro', 'Valor', 'Digite o valor', (value) => {
         const amount = parsePositiveInt(value);
-        if (amount) Admin.requestData('addVault', { amount });
+        if (amount) {
+          LoadingIndicator.show('Processando depósito...');
+          Admin.requestData('addVault', { amount });
+        } else {
+          Notification.show('Valor inválido', 'error');
+        }
       }, 'number');
     },
     'quick-withdraw'() {
       InputModal.show('Sacar do Tesouro', 'Valor', 'Digite o valor', (value) => {
         const amount = parsePositiveInt(value);
-        if (amount) Admin.requestData('withdrawVault', { amount });
+        if (amount) {
+          LoadingIndicator.show('Processando saque...');
+          Admin.requestData('withdrawVault', { amount });
+        } else {
+          Notification.show('Valor inválido', 'error');
+        }
       }, 'number');
     },
     'quick-debts'() { Admin.requestData('debts_active'); },
@@ -585,12 +756,21 @@
     // Payment modal
     'confirm-payment'() {
       if (State.busy) return;
-      UI.setBusy(true, 3000);
-      postNUI('payTax', { tax: State.payment.amount, reason: State.payment.reason });
-      UI.close();
+      UI.setBusy(true);
+      LoadingIndicator.show('Processando pagamento...');
+      postNUI('payTax', { tax: State.payment.amount, reason: State.payment.reason })
+      .then(() => {
+        Notification.show('Pagamento realizado com sucesso!', 'success');
+        UI.close();
+      })
+      .catch(() => {
+        UI.setBusy(false);
+        LoadingIndicator.hide();
+      });
     },
     'refuse-payment'() {
       postNUI('refuseTax', { tax: State.payment.amount, reason: State.payment.reason });
+      Notification.show('Pagamento recusado', 'info');
       UI.close();
     },
   };
@@ -750,6 +930,15 @@
         const key = data.key;
         const d = data.data;
 
+        // Tratamento de erro do servidor
+        if (key === 'error') {
+          const errorMsg = (d && d.message) || 'Erro desconhecido';
+          Notification.show(errorMsg, 'error');
+          UI.setBusy(false);
+          LoadingIndicator.hide();
+          break;
+        }
+
         if (key === 'admin_state') {
           Admin.applyState(d || {});
         } else if (key === 'admin_logs') {
@@ -774,6 +963,7 @@
         }
 
         UI.setBusy(false);
+        LoadingIndicator.hide();
         break;
       }
 

@@ -148,6 +148,8 @@ RegisterNetEvent('space_economy:server_requestAdminData', function(dataType, pay
   local src = forcedSrc or source
   if not AdminAllowed(src) then
     Notify(src, 'Acesso negado.', 'error')
+    -- Envia resposta mesmo em caso de erro para destravar UI
+    SendAdminData(src, 'error', { message = 'Acesso negado' })
     return
   end
 
@@ -281,7 +283,9 @@ RegisterNetEvent('space_economy:server_requestAdminData', function(dataType, pay
     return
   end
 
+  -- DataType desconhecido - envia resposta para não travar UI
   SE.Log('admin', 'admin_requestData: dataType desconhecido', { src = src, dataType = dataType })
+  SendAdminData(src, 'error', { message = 'Ação desconhecida: ' .. dataType })
 end)
 
 --============================================================
