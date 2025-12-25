@@ -160,8 +160,9 @@ function DBInt.ProcessBankingTransactions()
     local processed = 0
 
     -- Buscar última data processada
+    -- Se não houver registro, usa data de 30 dias atrás para evitar processar anos de dados antigos
     local lastCheck = MySQL.scalar.await([[
-        SELECT COALESCE(last_transaction_date, '2024-01-01')
+        SELECT COALESCE(last_transaction_date, DATE_SUB(NOW(), INTERVAL 30 DAY))
         FROM space_economy_integration_config
         WHERE source_system = ?
     ]], {systemName})
