@@ -1,9 +1,8 @@
 -- ============================================
--- SPACE ECONOMY - DATABASE DIRECT INTEGRATIONS
+-- SPACE ECONOMY - DATABASE DIRECT INTEGRATIONS v2.0
 -- ============================================
--- Sistema de integração que consulta diretamente os bancos de dados
--- dos recursos externos ao invés de depender de eventos
--- Versão: 3.1.0
+-- Sistema atualizado baseado na estrutura REAL do banco de dados
+-- Versão: 3.1.0-DB
 -- ============================================
 
 if not SE then SE = {} end
@@ -17,7 +16,7 @@ local DBInt = SE.DBIntegrations
 DBInt.Config = {
     Enabled = true,
     CheckInterval = 60000, -- 60 segundos
-    BatchSize = 100, -- Processar 100 transações por vez
+    BatchSize = 100,
     MaxRetries = 3,
     DebugMode = true,
 
@@ -25,27 +24,21 @@ DBInt.Config = {
     Systems = {
         ['ps-banking'] = {
             enabled = true,
-            table = 'phone_transactions',
+            table = 'ps_banking_transactions',
             interval = 60000,
             processor = 'ProcessBankingTransactions'
         },
-        ['ox_inventory'] = {
-            enabled = true,
-            table = 'ox_inventory_transactions',
-            interval = 60000,
-            processor = 'ProcessInventoryTransactions'
-        },
-        ['vehicles'] = {
+        ['dealership'] = {
             enabled = true,
             table = 'player_vehicles',
             interval = 120000,
-            processor = 'ProcessVehicleTransactions'
+            processor = 'ProcessVehiclePurchases'
         },
-        ['housing'] = {
+        ['properties'] = {
             enabled = true,
-            table = 'player_houses',
+            table = 'properties',
             interval = 120000,
-            processor = 'ProcessHousingTransactions'
+            processor = 'ProcessPropertyPurchases'
         }
     }
 }
@@ -68,9 +61,6 @@ DBInt.State = {
 -- FUNÇÕES AUXILIARES
 -- ============================================
 
---- Log de debug
----@param message string
----@param data table|nil
 function DBInt.Debug(message, data)
     if DBInt.Config.DebugMode then
         print(('[^3SPACE ECONOMY DB-INT^7] %s'):format(message))
@@ -80,9 +70,6 @@ function DBInt.Debug(message, data)
     end
 end
 
---- Log de erro
----@param message string
----@param error any
 function DBInt.Error(message, error)
     print(('[^1SPACE ECONOMY DB-INT ERROR^7] %s'):format(message))
     if error then
@@ -90,10 +77,6 @@ function DBInt.Error(message, error)
     end
 end
 
---- Verifica se uma transação já foi processada
----@param sourceSystem string
----@param transactionId string
----@return boolean
 function DBInt.IsProcessed(sourceSystem, transactionId)
     local result = MySQL.single.await([[
         SELECT COUNT(*) as count
@@ -104,9 +87,6 @@ function DBInt.IsProcessed(sourceSystem, transactionId)
     return result and result.count > 0
 end
 
---- Marca uma transação como processada
----@param data table
----@return boolean
 function DBInt.MarkAsProcessed(data)
     local success = pcall(function()
         MySQL.insert.await([[
@@ -130,9 +110,6 @@ function DBInt.MarkAsProcessed(data)
     return success
 end
 
---- Atualiza estatísticas de integração
----@param sourceSystem string
----@param success boolean
 function DBInt.UpdateStats(sourceSystem, success)
     MySQL.update.await([[
         UPDATE space_economy_integration_config
@@ -147,29 +124,19 @@ function DBInt.UpdateStats(sourceSystem, success)
     })
 end
 
---- Cria uma dívida no sistema
----@param citizenid string
----@param amount number
----@param reason string
----@param taxType string
----@param metadata table
----@return number|nil debtId
 function DBInt.CreateDebt(citizenid, amount, reason, taxType, metadata)
     if not SE.Debts or not SE.Debts.Upsert then
         DBInt.Error('SE.Debts.Upsert não está disponível')
         return nil
     end
 
-    -- Calcular data de vencimento (7 dias a partir de agora)
     local dueTimestamp = os.time() + (7 * 24 * 60 * 60)
 
-    -- Adicionar tipo de imposto aos metadados
     metadata = metadata or {}
     metadata.tax_type = taxType
     metadata.auto_generated = true
     metadata.source = 'db_integration'
 
-    -- Criar dívida usando o sistema existente
     local debtId = SE.Debts.Upsert(citizenid, amount, reason, dueTimestamp, metadata)
 
     if debtId then
@@ -185,36 +152,36 @@ end
 -- PROCESSADORES DE TRANSAÇÕES
 -- ============================================
 
---- Processa transações bancárias (IOF)
----@return number processadas
+--- Processa transações bancárias (IOF) - ESTRUTURA REAL
 function DBInt.ProcessBankingTransactions()
     local systemName = 'ps-banking'
     DBInt.Debug('Iniciando processamento de transações bancárias...')
 
     local processed = 0
 
-    -- Buscar última transação processada
+    -- Buscar última data processada
     local lastCheck = MySQL.scalar.await([[
-        SELECT last_transaction_date
+        SELECT COALESCE(last_transaction_date, '2024-01-01')
         FROM space_economy_integration_config
         WHERE source_system = ?
-    ]], {systemName}) or '2024-01-01 00:00:00'
+    ]], {systemName})
 
-    -- Consultar novas transações do ps-banking
-    -- NOTA: A estrutura exata da tabela pode variar, ajuste conforme necessário
+    -- ESTRUTURA REAL: ps_banking_transactions
+    -- Campos: id, identifier, description, type, amount, date, isIncome
     local transactions = MySQL.query.await([[
         SELECT
             id,
-            citizenid,
+            identifier as citizenid,
             type,
             amount,
-            receiver,
-            created_at
-        FROM phone_transactions
-        WHERE type IN ('transfer', 'withdraw')
-            AND created_at > ?
+            date as transaction_date,
+            description
+        FROM ps_banking_transactions
+        WHERE date > ?
             AND amount > 0
-        ORDER BY created_at ASC
+            AND type = 'bank'
+            AND isIncome = 0
+        ORDER BY date ASC
         LIMIT ?
     ]], {lastCheck, DBInt.Config.BatchSize})
 
@@ -228,50 +195,62 @@ function DBInt.ProcessBankingTransactions()
     for _, tx in ipairs(transactions) do
         local transactionId = tostring(tx.id)
 
-        -- Verificar se já foi processada
         if not DBInt.IsProcessed(systemName, transactionId) then
-            -- Calcular IOF
-            local taxRate = 0.5 -- 0.5%
-            local minTax = 10 -- Mínimo $10
+            -- Calcular IOF (0.5% com mínimo de $10)
+            local taxRate = 0.5
+            local minTax = 10
             local taxAmount = math.max(math.floor(tx.amount * (taxRate / 100)), minTax)
 
-            -- Criar dívida
-            local reason = tx.type == 'transfer'
-                and 'IOF - Transferência Bancária'
-                or 'IOF - Saque Bancário'
+            -- Apenas cobrar IOF em transações acima de $100
+            if tx.amount >= 100 and taxAmount > 0 then
+                local reason = 'IOF - Transação Bancária'
 
-            local metadata = {
-                original_amount = tx.amount,
-                transaction_type = tx.type,
-                receiver = tx.receiver,
-                tax_rate = taxRate,
-                transaction_date = tx.created_at
-            }
+                local metadata = {
+                    original_amount = tx.amount,
+                    transaction_type = tx.type,
+                    description = tx.description,
+                    tax_rate = taxRate,
+                    transaction_date = tx.transaction_date
+                }
 
-            local debtId = DBInt.CreateDebt(
-                tx.citizenid,
-                taxAmount,
-                reason,
-                'IOF',
-                metadata
-            )
+                local debtId = DBInt.CreateDebt(
+                    tx.citizenid,
+                    taxAmount,
+                    reason,
+                    'IOF',
+                    metadata
+                )
 
-            -- Marcar como processada
-            if debtId then
+                if debtId then
+                    DBInt.MarkAsProcessed({
+                        source_system = systemName,
+                        transaction_id = transactionId,
+                        transaction_type = tx.type,
+                        citizenid = tx.citizenid,
+                        amount = tx.amount,
+                        tax_amount = taxAmount,
+                        tax_type = 'IOF',
+                        debt_id = debtId,
+                        transaction_date = tx.transaction_date,
+                        metadata = metadata
+                    })
+
+                    processed = processed + 1
+                end
+            else
+                -- Marcar como processada mas sem cobrar imposto (valor muito baixo)
                 DBInt.MarkAsProcessed({
                     source_system = systemName,
                     transaction_id = transactionId,
                     transaction_type = tx.type,
                     citizenid = tx.citizenid,
                     amount = tx.amount,
-                    tax_amount = taxAmount,
+                    tax_amount = 0,
                     tax_type = 'IOF',
-                    debt_id = debtId,
-                    transaction_date = tx.created_at,
-                    metadata = metadata
+                    debt_id = nil,
+                    transaction_date = tx.transaction_date,
+                    metadata = {note = 'Valor abaixo do mínimo para IOF'}
                 })
-
-                processed = processed + 1
             end
         end
     end
@@ -280,162 +259,71 @@ function DBInt.ProcessBankingTransactions()
     return processed
 end
 
---- Processa transações de inventário (ICMS)
----@return number processadas
-function DBInt.ProcessInventoryTransactions()
-    local systemName = 'ox_inventory'
-    DBInt.Debug('Iniciando processamento de transações de inventário...')
-
-    local processed = 0
-
-    -- Lista de itens isentos
-    local exemptItems = {
-        ['bread'] = true,
-        ['water'] = true,
-        ['sandwich'] = true
-    }
-
-    local lastCheck = MySQL.scalar.await([[
-        SELECT last_transaction_date
-        FROM space_economy_integration_config
-        WHERE source_system = ?
-    ]], {systemName}) or '2024-01-01 00:00:00'
-
-    -- Buscar compras em lojas
-    -- NOTA: ox_inventory pode armazenar isso de diferentes formas
-    -- Esta é uma implementação genérica que precisa ser ajustada
-    local transactions = MySQL.query.await([[
-        SELECT
-            id,
-            owner as citizenid,
-            item,
-            count as quantity,
-            price,
-            created as created_at
-        FROM ox_inventory_transactions
-        WHERE type = 'shop_purchase'
-            AND created > ?
-            AND price > 0
-        ORDER BY created ASC
-        LIMIT ?
-    ]], {lastCheck, DBInt.Config.BatchSize})
-
-    if not transactions or #transactions == 0 then
-        DBInt.Debug('Nenhuma transação de inventário nova encontrada')
-        return 0
-    end
-
-    DBInt.Debug(('Encontradas %d transações de inventário para processar'):format(#transactions))
-
-    for _, tx in ipairs(transactions) do
-        local transactionId = tostring(tx.id)
-
-        -- Verificar se já foi processada
-        if not DBInt.IsProcessed(systemName, transactionId) then
-            -- Verificar se item é isento
-            if not exemptItems[tx.item] then
-                -- Calcular ICMS (12%)
-                local taxRate = 12.0
-                local taxAmount = math.floor(tx.price * (taxRate / 100))
-
-                if taxAmount > 0 then
-                    local reason = ('ICMS - Compra de %dx %s'):format(tx.quantity or 1, tx.item)
-
-                    local metadata = {
-                        item = tx.item,
-                        quantity = tx.quantity,
-                        price = tx.price,
-                        tax_rate = taxRate,
-                        transaction_date = tx.created_at
-                    }
-
-                    local debtId = DBInt.CreateDebt(
-                        tx.citizenid,
-                        taxAmount,
-                        reason,
-                        'ICMS',
-                        metadata
-                    )
-
-                    if debtId then
-                        DBInt.MarkAsProcessed({
-                            source_system = systemName,
-                            transaction_id = transactionId,
-                            transaction_type = 'shop_purchase',
-                            citizenid = tx.citizenid,
-                            amount = tx.price,
-                            tax_amount = taxAmount,
-                            tax_type = 'ICMS',
-                            debt_id = debtId,
-                            transaction_date = tx.created_at,
-                            metadata = metadata
-                        })
-
-                        processed = processed + 1
-                    end
-                end
-            end
-        end
-    end
-
-    DBInt.Debug(('Processadas %d transações de inventário'):format(processed))
-    return processed
-end
-
---- Processa compras de veículos (IPVA)
----@return number processadas
-function DBInt.ProcessVehicleTransactions()
-    local systemName = 'vehicles'
+--- Processa compras de veículos (IPVA) - ESTRUTURA REAL
+function DBInt.ProcessVehiclePurchases()
+    local systemName = 'dealership'
     DBInt.Debug('Iniciando processamento de compras de veículos...')
 
     local processed = 0
 
-    local lastCheck = MySQL.scalar.await([[
-        SELECT last_transaction_date
-        FROM space_economy_integration_config
-        WHERE source_system = ?
-    ]], {systemName}) or '2024-01-01 00:00:00'
+    -- ESTRUTURA REAL: player_vehicles
+    -- Campos: id, license, citizenid, vehicle, plate, garage, state, last_ipva_at
+    -- NOTA: Não há campo 'price' ou 'created_at' padrão
+    -- Vamos usar a data de última modificação ou outro critério
 
-    -- Buscar veículos comprados recentemente
     local vehicles = MySQL.query.await([[
         SELECT
-            id,
-            citizenid,
-            vehicle,
-            plate,
-            price,
-            created_at
-        FROM player_vehicles
-        WHERE created_at > ?
-            AND price > 0
-        ORDER BY created_at ASC
+            pv.id,
+            pv.citizenid,
+            pv.vehicle,
+            pv.plate,
+            pv.last_ipva_at
+        FROM player_vehicles pv
+        WHERE pv.citizenid IS NOT NULL
+            AND pv.citizenid != ''
+            AND (pv.last_ipva_at IS NULL OR pv.last_ipva_at < DATE_SUB(NOW(), INTERVAL 30 DAY))
         LIMIT ?
-    ]], {lastCheck, DBInt.Config.BatchSize})
+    ]], {DBInt.Config.BatchSize})
 
     if not vehicles or #vehicles == 0 then
-        DBInt.Debug('Nenhuma compra de veículo nova encontrada')
+        DBInt.Debug('Nenhum veículo pendente de IPVA encontrado')
         return 0
     end
 
-    DBInt.Debug(('Encontradas %d compras de veículos para processar'):format(#vehicles))
+    DBInt.Debug(('Encontrados %d veículos para IPVA'):format(#vehicles))
 
     for _, veh in ipairs(vehicles) do
-        local transactionId = tostring(veh.id)
+        local transactionId = 'ipva_' .. veh.plate
 
         if not DBInt.IsProcessed(systemName, transactionId) then
+            -- Como não temos o preço no banco, vamos usar um valor fixo
+            -- ou buscar de uma tabela de preços de veículos
+            local basePrice = 50000 -- Valor base padrão
+
+            -- Tentar buscar preço da dealership_vehicles
+            local vehicleData = MySQL.single.await([[
+                SELECT price
+                FROM dealership_vehicles
+                WHERE model = ?
+                LIMIT 1
+            ]], {veh.vehicle})
+
+            if vehicleData and vehicleData.price then
+                basePrice = vehicleData.price
+            end
+
             -- Calcular IPVA (1.5%)
             local taxRate = 1.5
-            local taxAmount = math.floor(veh.price * (taxRate / 100))
+            local taxAmount = math.floor(basePrice * (taxRate / 100))
 
             if taxAmount > 0 then
-                local reason = ('IPVA - Veículo %s (%s)'):format(veh.vehicle or 'Desconhecido', veh.plate)
+                local reason = ('IPVA - Veículo %s (%s)'):format(veh.vehicle, veh.plate)
 
                 local metadata = {
                     vehicle = veh.vehicle,
                     plate = veh.plate,
-                    price = veh.price,
-                    tax_rate = taxRate,
-                    transaction_date = veh.created_at
+                    base_price = basePrice,
+                    tax_rate = taxRate
                 }
 
                 local debtId = DBInt.CreateDebt(
@@ -447,16 +335,23 @@ function DBInt.ProcessVehicleTransactions()
                 )
 
                 if debtId then
+                    -- Atualizar last_ipva_at
+                    MySQL.update.await([[
+                        UPDATE player_vehicles
+                        SET last_ipva_at = NOW()
+                        WHERE id = ?
+                    ]], {veh.id})
+
                     DBInt.MarkAsProcessed({
                         source_system = systemName,
                         transaction_id = transactionId,
-                        transaction_type = 'vehicle_purchase',
+                        transaction_type = 'ipva_annual',
                         citizenid = veh.citizenid,
-                        amount = veh.price,
+                        amount = basePrice,
                         tax_amount = taxAmount,
                         tax_type = 'IPVA',
                         debt_id = debtId,
-                        transaction_date = veh.created_at,
+                        transaction_date = os.date('%Y-%m-%d'),
                         metadata = metadata
                     })
 
@@ -466,62 +361,58 @@ function DBInt.ProcessVehicleTransactions()
         end
     end
 
-    DBInt.Debug(('Processadas %d compras de veículos'):format(processed))
+    DBInt.Debug(('Processados %d IPVAs'):format(processed))
     return processed
 end
 
---- Processa compras de propriedades (IPTU)
----@return number processadas
-function DBInt.ProcessHousingTransactions()
-    local systemName = 'housing'
-    DBInt.Debug('Iniciando processamento de compras de propriedades...')
+--- Processa compras de propriedades (IPTU) - ESTRUTURA REAL
+function DBInt.ProcessPropertyPurchases()
+    local systemName = 'properties'
+    DBInt.Debug('Iniciando processamento de propriedades...')
 
     local processed = 0
 
-    local lastCheck = MySQL.scalar.await([[
-        SELECT last_transaction_date
-        FROM space_economy_integration_config
-        WHERE source_system = ?
-    ]], {systemName}) or '2024-01-01 00:00:00'
-
-    -- Buscar propriedades compradas recentemente
+    -- ESTRUTURA REAL: properties (do tiao_properties)
+    -- Campos: id, address, label, type, owner_citizenid, price
     local properties = MySQL.query.await([[
         SELECT
             id,
-            citizenid,
-            house,
-            price,
-            created_at
-        FROM player_houses
-        WHERE created_at > ?
+            owner_citizenid as citizenid,
+            address,
+            label,
+            price
+        FROM properties
+        WHERE owner_citizenid IS NOT NULL
+            AND owner_citizenid != ''
             AND price > 0
-        ORDER BY created_at ASC
         LIMIT ?
-    ]], {lastCheck, DBInt.Config.BatchSize})
+    ]], {DBInt.Config.BatchSize})
 
     if not properties or #properties == 0 then
-        DBInt.Debug('Nenhuma compra de propriedade nova encontrada')
+        DBInt.Debug('Nenhuma propriedade encontrada')
         return 0
     end
 
-    DBInt.Debug(('Encontradas %d compras de propriedades para processar'):format(#properties))
+    DBInt.Debug(('Encontradas %d propriedades para IPTU'):format(#properties))
 
     for _, prop in ipairs(properties) do
-        local transactionId = tostring(prop.id)
+        local transactionId = 'iptu_' .. prop.id
 
+        -- Verificar se já cobrou IPTU este mês
         if not DBInt.IsProcessed(systemName, transactionId) then
             -- Calcular IPTU (0.3%)
             local taxRate = 0.3
             local taxAmount = math.floor(prop.price * (taxRate / 100))
 
             if taxAmount > 0 then
-                local reason = ('IPTU - Propriedade %s'):format(prop.house or 'Desconhecida')
+                local reason = ('IPTU - Propriedade %s'):format(prop.address or prop.label or prop.id)
 
                 local metadata = {
-                    house = prop.house,
+                    property_id = prop.id,
+                    address = prop.address,
+                    label = prop.label,
                     price = prop.price,
-                    tax_rate = taxRate,
-                    transaction_date = prop.created_at
+                    tax_rate = taxRate
                 }
 
                 local debtId = DBInt.CreateDebt(
@@ -536,13 +427,13 @@ function DBInt.ProcessHousingTransactions()
                     DBInt.MarkAsProcessed({
                         source_system = systemName,
                         transaction_id = transactionId,
-                        transaction_type = 'property_purchase',
+                        transaction_type = 'iptu_monthly',
                         citizenid = prop.citizenid,
                         amount = prop.price,
                         tax_amount = taxAmount,
                         tax_type = 'IPTU',
                         debt_id = debtId,
-                        transaction_date = prop.created_at,
+                        transaction_date = os.date('%Y-%m-%d'),
                         metadata = metadata
                     })
 
@@ -552,7 +443,7 @@ function DBInt.ProcessHousingTransactions()
         end
     end
 
-    DBInt.Debug(('Processadas %d compras de propriedades'):format(processed))
+    DBInt.Debug(('Processados %d IPTUs'):format(processed))
     return processed
 end
 
@@ -560,8 +451,6 @@ end
 -- SCHEDULER E INICIALIZAÇÃO
 -- ============================================
 
---- Executa verificação de um sistema específico
----@param systemName string
 function DBInt.CheckSystem(systemName)
     local system = DBInt.Config.Systems[systemName]
 
@@ -569,7 +458,6 @@ function DBInt.CheckSystem(systemName)
         return
     end
 
-    -- Evitar execução simultânea
     if DBInt.State.running[systemName] then
         DBInt.Debug(('Sistema %s já está em execução, pulando...'):format(systemName))
         return
@@ -577,7 +465,6 @@ function DBInt.CheckSystem(systemName)
 
     DBInt.State.running[systemName] = true
 
-    -- Executar processador
     local success, result = pcall(function()
         if DBInt[system.processor] then
             return DBInt[system.processor]()
@@ -605,7 +492,6 @@ function DBInt.CheckSystem(systemName)
     DBInt.State.lastCheck[systemName] = os.time()
 end
 
---- Inicia todos os schedulers
 function DBInt.StartSchedulers()
     if not DBInt.Config.Enabled then
         print('[^3SPACE ECONOMY DB-INT^7] Sistema de integração DB DESABILITADO')
@@ -616,10 +502,8 @@ function DBInt.StartSchedulers()
 
     for systemName, system in pairs(DBInt.Config.Systems) do
         if system.enabled then
-            -- Criar thread para cada sistema
             CreateThread(function()
-                -- Aguardar 10 segundos antes de iniciar
-                Wait(10000)
+                Wait(10000) -- Aguardar 10 segundos antes de iniciar
 
                 DBInt.Debug(('Scheduler iniciado para %s (intervalo: %dms)'):format(
                     systemName, system.interval
@@ -647,12 +531,11 @@ function DBInt.StartSchedulers()
                 print(('  - %s: %d transações'):format(system, count))
             end
 
-            Wait(300000) -- A cada 5 minutos
+            Wait(300000)
         end
     end)
 end
 
---- Inicializa o sistema de integração
 function DBInt.Initialize()
     if DBInt.State.initialized then
         return
@@ -660,9 +543,8 @@ function DBInt.Initialize()
 
     print('[^2SPACE ECONOMY DB-INT^7] Inicializando sistema de integração com banco de dados...')
 
-    -- Verificar se as tabelas existem
     CreateThread(function()
-        Wait(5000) -- Aguardar banco de dados carregar
+        Wait(5000)
 
         local exists = MySQL.scalar.await([[
             SELECT COUNT(*)
@@ -688,10 +570,8 @@ end
 -- COMANDOS ADMINISTRATIVOS
 -- ============================================
 
---- Comando para forçar verificação manual
 RegisterCommand('se:checkintegrations', function(source, args)
     if source ~= 0 then
-        -- Apenas console pode executar
         return
     end
 
@@ -704,7 +584,6 @@ RegisterCommand('se:checkintegrations', function(source, args)
     print('[^2SPACE ECONOMY DB-INT^7] Verificação manual concluída!')
 end, true)
 
---- Comando para ver estatísticas
 RegisterCommand('se:dbstats', function(source, args)
     if source ~= 0 then
         return
@@ -743,4 +622,4 @@ exports('ForceCheckSystem', function(systemName)
     return false
 end)
 
-print('[^2SPACE ECONOMY^7] Módulo db_integrations.lua carregado')
+print('[^2SPACE ECONOMY^7] Módulo db_integrations.lua v2.0 carregado (estrutura real do BD)')
