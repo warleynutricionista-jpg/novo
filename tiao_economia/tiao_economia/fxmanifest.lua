@@ -42,6 +42,7 @@ server_scripts {
   'server/auto_tax.lua',        -- NOVO: Taxação automática
   'server/reports.lua',         -- NOVO: Relatórios e analytics
   'server/external_integrations.lua', -- NOVO: Integrações externas
+  'server/db_integrations.lua', -- NOVO: Integrações diretas com banco de dados
 
   -- Melhorias v3.1 (Performance & UX)
   'server/cache.lua',           -- Sistema de cache com TTL
@@ -196,4 +197,10 @@ exports {
   'DiscordDebtPaid',
   'DiscordAdminAction',
   'DiscordAlert',
+}
+
+-- DB Integrations (v3.1)
+exports {
+  'GetDBIntegrationStats',
+  'ForceCheckSystem',
 }
